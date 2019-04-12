@@ -10,10 +10,15 @@
 #
 
 set(CUSTOM_PLUGIN_SRC_DIR
-#	private_plugins/foo
-# or
-#	plugins/epan/foo
+    src
 )
+
+add_executable(xxx ${CUSTOM_PLUGIN_DIR}/xxx.cpp ${SHARK_COMMON_SRC})
+target_link_libraries(xxx PRIVATE
+    capchild
+    caputils
+    ${LIBEPAN_LIBS}
+
 
 #
 # Editor modelines  -  http://www.wireshark.org/tools/modelines.html

@@ -3341,6 +3341,17 @@ if (NOT "${SHELLCHECK_EXECUTABLE}" STREQUAL "SHELLCHECK_EXECUTABLE-NOTFOUND")
 	)
 endif()
 
+# NOTE-IEBC-NOTE
+add_subdirectory(src)
+
+add_executable(xxx src/xxx.cpp)
+target_link_libraries(xxx
+    ${LIBEPAN_LIBS}
+    )
+
+# NOTE-IEBC-NOTE
+
+
 #
 # Editor modelines  -  http://www.wireshark.org/tools/modelines.html
 #
