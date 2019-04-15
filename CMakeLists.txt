@@ -1662,27 +1662,7 @@ set(INSTALL_FILES
 	smi_modules
 	wka
 	docbook/ws.css
-	${CMAKE_BINARY_DIR}/doc/AUTHORS-SHORT
-	${CMAKE_BINARY_DIR}/doc/androiddump.html
-	${CMAKE_BINARY_DIR}/doc/udpdump.html
-	${CMAKE_BINARY_DIR}/doc/capinfos.html
-	${CMAKE_BINARY_DIR}/doc/captype.html
-	${CMAKE_BINARY_DIR}/doc/ciscodump.html
-	${CMAKE_BINARY_DIR}/doc/dftest.html
-	${CMAKE_BINARY_DIR}/doc/dumpcap.html
-	${CMAKE_BINARY_DIR}/doc/editcap.html
-	${CMAKE_BINARY_DIR}/doc/extcap.html
-	${CMAKE_BINARY_DIR}/doc/mergecap.html
-	${CMAKE_BINARY_DIR}/doc/randpkt.html
-	${CMAKE_BINARY_DIR}/doc/randpktdump.html
-	${CMAKE_BINARY_DIR}/doc/rawshark.html
-	${CMAKE_BINARY_DIR}/doc/reordercap.html
-	${CMAKE_BINARY_DIR}/doc/sshdump.html
-	${CMAKE_BINARY_DIR}/doc/text2pcap.html
-	${CMAKE_BINARY_DIR}/doc/tshark.html
-	${CMAKE_BINARY_DIR}/doc/wireshark.html
-	${CMAKE_BINARY_DIR}/doc/wireshark-filter.html
-)
+	)
 
 if(MAXMINDDB_FOUND)
 	list(APPEND INSTALL_FILES ${CMAKE_BINARY_DIR}/doc/mmdbresolve.html)
@@ -3340,17 +3320,6 @@ if (NOT "${SHELLCHECK_EXECUTABLE}" STREQUAL "SHELLCHECK_EXECUTABLE-NOTFOUND")
 		WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 	)
 endif()
-
-# NOTE-IEBC-NOTE
-add_subdirectory(src)
-
-add_executable(xxx src/xxx.cpp)
-target_link_libraries(xxx
-    ${LIBEPAN_LIBS}
-    )
-
-# NOTE-IEBC-NOTE
-
 
 #
 # Editor modelines  -  http://www.wireshark.org/tools/modelines.html
