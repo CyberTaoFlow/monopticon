@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <iostream>
+#include <math.h>
+#include <ctime>
 
 #include "wireshark/epan/epan.h"
 #include <imgui.h>
@@ -15,12 +17,15 @@
 #include <Magnum/GL/Mesh.h>
 #include <Magnum/GL/Renderer.h>
 #include <Magnum/Math/Constants.h>
+#include <Magnum/Math/Vector2.h>
+#include <Magnum/Math/Vector3.h>
 #include <Magnum/MeshTools/Compile.h>
 #include <Magnum/MeshTools/Transform.h>
 #include <Magnum/ImGuiIntegration/Context.hpp>
 #include <Magnum/Platform/Sdl2Application.h>
 #include <Magnum/Primitives/Cube.h>
 #include <Magnum/Primitives/Circle.h>
+#include <Magnum/Primitives/UVSphere.h>
 #include <Magnum/SceneGraph/Camera.h>
 #include <Magnum/SceneGraph/Drawable.h>
 #include <Magnum/SceneGraph/MatrixTransformation3D.h>
@@ -37,14 +42,14 @@ using namespace Math::Literals;
 typedef SceneGraph::Object<SceneGraph::MatrixTransformation3D> Object3D;
 typedef SceneGraph::Scene<SceneGraph::MatrixTransformation3D> Scene3D;
 
+Vector2 randCirclePoint();
 
 class ColoredDrawable: public SceneGraph::Drawable3D {
     public:
-        explicit ColoredDrawable(Object3D& object, Shaders::Phong& shader, GL::Mesh& mesh, const Color4& color, const Matrix4& primitiveTransformation, SceneGraph::DrawableGroup3D& drawables):
+        explicit ColoredDrawable(Object3D& object, Shaders::Phong& shader, GL::Mesh& mesh, const Matrix4& primitiveTransformation, SceneGraph::DrawableGroup3D& drawables):
             SceneGraph::Drawable3D{object, &drawables},
             _shader(shader),
             _mesh(mesh),
-            _color{color},
             _primitiveTransformation{primitiveTransformation} {}
 
     private:
@@ -57,7 +62,6 @@ class ColoredDrawable: public SceneGraph::Drawable3D {
 
         Shaders::Phong& _shader;
         GL::Mesh& _mesh;
-        Color4 _color;
         Matrix4 _primitiveTransformation;
 };
 
@@ -68,23 +72,24 @@ class RingDrawable: public SceneGraph::Drawable3D {
             SceneGraph::Drawable3D{object, &group}
         {
 
-            _mesh = MeshTools::compile(Primitives::circle3DSolid(70));
+            _mesh = MeshTools::compile(Primitives::circle3DWireframe(70));
             _color = color;
-            _shader = Shaders::Flat3D{};
+            _shader = Shaders::MeshVisualizer{Shaders::MeshVisualizer::Flag::Wireframe|Shaders::MeshVisualizer::Flag::NoGeometryShader};
         }
 
     private:
         void draw(const Matrix4& transformationMatrix, SceneGraph::Camera3D& camera) override {
             using namespace Math::Literals;
 
-            _shader.setColor(_color)
+            _shader.setColor(0xffffff_rgbf)
+                   .setWireframeColor(_color)
                    .setTransformationProjectionMatrix(camera.projectionMatrix()*transformationMatrix);
             _mesh.draw(_shader);
         }
 
         GL::Mesh _mesh;
         Color4 _color;
-        Shaders::Flat3D _shader;
+        Shaders::MeshVisualizer _shader;
 };
 
 
@@ -109,7 +114,8 @@ class ObjSelect: public Platform::Application {
         ImGuiIntegration::Context _imgui{NoCreate};
 
         GL::Mesh _box{NoCreate}, _circle{NoCreate};
-        Color4 _clearColor = 0xffffffff_rgbaf;
+        Color4 _clearColor = 0x002b36_rgbf;
+        Color4 _pickColor = 0xffffff_rgbf;
 
         GL::Buffer _indexBuffer, _vertexBuffer;
         GL::Mesh _mesh;
@@ -131,7 +137,9 @@ class ObjSelect: public Platform::Application {
 };
 
 
-ObjSelect::ObjSelect(const Arguments& arguments): Platform::Application(arguments, Configuration{}.setTitle("Monopticon"), GLConfiguration{}.setSampleCount(16)) {
+ObjSelect::ObjSelect(const Arguments& arguments): Platform::Application(arguments,
+            Configuration{}.setTitle("Monopticon").setWindowFlags(Configuration::WindowFlag::Borderless).setSize(Vector2i{1200,800}),
+            GLConfiguration{}.setSampleCount(16)) {
     {
     std::cout << "Made it here" << std::endl;
 
@@ -146,26 +154,25 @@ ObjSelect::ObjSelect(const Arguments& arguments): Platform::Application(argument
         ->setAspectRatioPolicy(SceneGraph::AspectRatioPolicy::Extend)
         .setProjectionMatrix(Matrix4::perspectiveProjection(35.0_degf, 1.0f, 0.001f, 100.0f))
         .setViewport(GL::defaultFramebuffer.viewport().size()); /* Drawing setup */
-    _box = MeshTools::compile(Primitives::cubeSolid());
+
+    _box = MeshTools::compile(Primitives::uvSphereSolid(8.0f, 30.0f));
     _shader = Shaders::Phong{};
     _shader.setAmbientColor(0x111111_rgbf)
            .setSpecularColor(0x330000_rgbf)
+            .setDiffuseColor(_pickColor)
            .setLightPosition({10.0f, 15.0f, 5.0f});
 
-    /* Create boxes with random colors */
-    Deg hue = 42.0_degf;
-    for(Int i = 0; i != 2; ++i) {
-        for(Int j = 0; j != 2; ++j) {
-            for(Int k = 0; k != 2; ++k) {
-                Object3D* o = new Object3D{&_scene};
-                o->translate({i - 2.0f, j + 4.0f, k - 2.0f});
-                auto c = Color3::fromHsv({hue += 137.5_degf, 0.75f, 0.9f});
-                _shader.setDiffuseColor(c);
-                //new ColoredDrawable{*o, _shader, _box, c,
-                //Matrix4::scaling(Vector3{0.5f}), _drawables};
-            }
-        }
+    srand(time(NULL));
+    for(Int i = 0; i != 10; ++i) {
+        Object3D* o = new Object3D{&_scene};
+        Vector2 v = 10.0f*randCirclePoint();
+
+        o->translate({v.x(), 0.0f, v.y()});
+
+        new ColoredDrawable{*o, _shader, _box,
+        Matrix4::scaling(Vector3{0.25f}), _drawables};
     }
+
 
 
     Object3D *cow = new Object3D{&_scene};
@@ -212,6 +219,7 @@ void ObjSelect::drawEvent() {
 
     /* Draw all the things */
     if(_drawCubes) _camera->draw(_drawables);
+    _cameraObject->rotateY(0.10_degf);
 
     _imgui.newFrame();
 
@@ -219,8 +227,10 @@ void ObjSelect::drawEvent() {
     ImGui::Begin("Heads Up Display");
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)",
         1000.0/Double(ImGui::GetIO().Framerate), Double(ImGui::GetIO().Framerate));
-    if(ImGui::ColorEdit3("Clear Color", _clearColor.data()))
-       GL::Renderer::setClearColor(_clearColor);
+    if(ImGui::ColorEdit3("Pick Item Color", _pickColor.data()))
+        _shader.setDiffuseColor(_pickColor);
+    if(ImGui::ColorEdit3("Pick Background Color", _clearColor.data()))
+        GL::Renderer::setClearColor(_clearColor);
     ImGui::End();
 
 
@@ -282,11 +292,6 @@ void ObjSelect::mousePressEvent(MouseEvent& event) {
 
 void ObjSelect::mouseReleaseEvent(MouseEvent& event) {
     if(_imgui.handleMouseReleaseEvent(event)) return;
-
-    _color = Color3::fromHsv({_color.hue() + 50.0_degf, 1.0f, 1.0f});
-
-    event.setAccepted();
-    redraw();
 }
 
 void ObjSelect::mouseMoveEvent(MouseMoveEvent& event) {
@@ -324,6 +329,12 @@ void ObjSelect::mouseScrollEvent(MouseScrollEvent& event) {
 
 void ObjSelect::textInputEvent(TextInputEvent& event) {
     if(_imgui.handleTextInputEvent(event)) return;
+}
+
+Vector2 randCirclePoint() {
+    float f =  rand() / (RAND_MAX/(2*Math::Constants<float>::pi()));
+
+    return Vector2{cos(f), sin(f)};
 }
 
 }}
