@@ -1,4 +1,3 @@
-#include <cstdlib>
 #include <cstring>
 #include <stdio.h>
 #include <iostream>
@@ -9,6 +8,9 @@
 #include <epan/epan.h>
 #include <epan/addr_resolv.h>
 #include <capchild/capture_session.h>
+#include <capchild/capture_sync.h>
+#include <capture_info.h>
+
 #include <ui/ws_ui_util.h>
 #include <ui/capture.h>
 
@@ -21,8 +23,13 @@
 #include <Magnum/GL/DefaultFramebuffer.h>
 #include <Magnum/Platform/Sdl2Application.h>
 
-using namespace Magnum;
-
+void pipe_input_set_handler(gint source, gpointer user_data, ws_process_id *child_process, pipe_input_cb_t input_cb);
+void capture_input_new_packets(capture_session *cap_session, int to_read);
+void capture_input_error_message(capture_session *cap_session _U_, char *error_msg, char *secondary_error_msg);
+gboolean capture_input_new_file(capture_session *cap_session, gchar *new_file);
+void capture_input_drops(capture_session *cap_session _U_, guint32 dropped);
+void capture_input_closed(capture_session *cap_session, gchar *msg);
+void capture_input_cfilter_error_message(capture_session *cap_session, guint i, char *error_message);
 
 void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes);
 cf_status_t cf_open(capture_file *cf, const char *fname, unsigned int type, gboolean is_tempfile, int *err);
@@ -101,7 +108,9 @@ fail:
 
 
 
-class Ebc: public Platform::Application {
+namespace Magnum {
+
+class Ebc: public Magnum::Platform::Application {
     public:
         explicit Ebc(const Arguments& arguments);
 
@@ -109,7 +118,9 @@ class Ebc: public Platform::Application {
         void drawEvent() override;
 };
 
-Ebc::Ebc(const Arguments& arguments): Platform::Application{arguments, Configuration{}.setTitle("EvenBetterCap")} {
+Ebc::Ebc(const Arguments& arguments): Magnum::Platform::Application{arguments, Configuration{}.setTitle("EvenBetterCap")} {
+
+    std::cout << "hello, world!" << std::endl;
 
     char errbuf[PCAP_ERRBUF_SIZE] = "N/A";
 
@@ -170,12 +181,14 @@ Ebc::Ebc(const Arguments& arguments): Platform::Application{arguments, Configura
 }
 
 void Ebc::drawEvent() {
-    GL::defaultFramebuffer.clear(GL::FramebufferClear::Color);
-
-
+    Magnum::GL::defaultFramebuffer.clear(Magnum::GL::FramebufferClear::Color);
 
     swapBuffers();
 }
+
+
+}
+
 
 void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
 {
@@ -215,4 +228,8 @@ void capture_input_closed(capture_session *cap_session, gchar *msg) {
     return;
 }
 
-MAGNUM_APPLICATION_MAIN(Ebc)
+void capture_input_cfilter_error_message(capture_session *cap_session, guint i, char *error_message) {
+    return;
+}
+
+MAGNUM_APPLICATION_MAIN(Magnum::Ebc)

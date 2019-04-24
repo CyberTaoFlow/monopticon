@@ -43,22 +43,26 @@ register_tap_files(ebc-tap-register.c ${TSHARK_TAP_SRC})
 set(ebc_FILES
     capture_opts.c
     ebc-tap-register.c
-    src/ebc.cpp
+    ebc.cpp
     ${TSHARK_TAP_SRC}
     ${SHARK_COMMON_SRC}
 )
 
 add_executable(ebc ${ebc_FILES})
 
+
 set(EBC_LIBS
     ui
+    capchild
+    caputils
     ${LIBEPAN_LIBS}
     ${GLIB2_LIBRARIES}
     ${APPLE_CORE_FOUNDATION_LIBRARY}
     ${APPLE_SYSTEM_CONFIGURATION_LIBRARY}
-    capchild
-    caputils
 )
+
+add_dependencies(ebc version)
+set_extra_executable_properties(ebc "Executables")
 
 target_link_libraries(ebc
     Magnum::Application
