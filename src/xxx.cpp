@@ -25,6 +25,7 @@
 #include <Magnum/Platform/Sdl2Application.h>
 #include <Magnum/Primitives/Cube.h>
 #include <Magnum/Primitives/Circle.h>
+#include <Magnum/Primitives/Line.h>
 #include <Magnum/Primitives/UVSphere.h>
 #include <Magnum/SceneGraph/Camera.h>
 #include <Magnum/SceneGraph/Drawable.h>
@@ -92,6 +93,25 @@ class RingDrawable: public SceneGraph::Drawable3D {
         Shaders::MeshVisualizer _shader;
 };
 
+class PacketLineDrawable: public SceneGraph::Drawable3D {
+    public:
+        explicit PacketLineDrawable(Object3D& object, Shaders::Flat3D& shader, Vector3& a, Vector3& b, SceneGraph::DrawableGroup3D& group):
+            SceneGraph::Drawable3D{object, &group},
+            _shader{shader}
+        {
+
+            _mesh = MeshTools::compile(Primitives::line3D(a,b));
+        }
+
+    private:
+        void draw(const Matrix4& transformationMatrix, SceneGraph::Camera3D& camera) override {
+            _shader.setTransformationProjectionMatrix(camera.projectionMatrix()*transformationMatrix);
+            _mesh.draw(_shader);
+        }
+
+        GL::Mesh _mesh;
+        Shaders::Flat3D& _shader;
+};
 
 class ObjSelect: public Platform::Application {
     public:
@@ -121,8 +141,7 @@ class ObjSelect: public Platform::Application {
         GL::Mesh _mesh;
         Shaders::Phong _shader;
 
-        Shaders::MeshVisualizer _mesh_shader{Shaders::MeshVisualizer::Flag::Wireframe};
-
+        Shaders::Flat3D _line_shader;
 
         Scene3D _scene;
         SceneGraph::Camera3D* _camera;
@@ -152,32 +171,39 @@ ObjSelect::ObjSelect(const Arguments& arguments): Platform::Application(argument
         .rotateX(-25.0_degf);
     (_camera = new SceneGraph::Camera3D(*_cameraObject))
         ->setAspectRatioPolicy(SceneGraph::AspectRatioPolicy::Extend)
-        .setProjectionMatrix(Matrix4::perspectiveProjection(35.0_degf, 1.0f, 0.001f, 100.0f))
+        .setProjectionMatrix(Matrix4::perspectiveProjection(25.0_degf, 1.0f, 0.001f, 100.0f))
         .setViewport(GL::defaultFramebuffer.viewport().size()); /* Drawing setup */
 
     _box = MeshTools::compile(Primitives::uvSphereSolid(8.0f, 30.0f));
     _shader = Shaders::Phong{};
     _shader.setAmbientColor(0x111111_rgbf)
            .setSpecularColor(0x330000_rgbf)
-            .setDiffuseColor(_pickColor)
+           .setDiffuseColor(_pickColor)
            .setLightPosition({10.0f, 15.0f, 5.0f});
+
+    _line_shader = Shaders::Flat3D{};
+    _line_shader.setColor(0x00ffff_rgbf);
 
     srand(time(NULL));
     for(Int i = 0; i != 10; ++i) {
         Object3D* o = new Object3D{&_scene};
         Vector2 v = 10.0f*randCirclePoint();
-
         o->translate({v.x(), 0.0f, v.y()});
 
         new ColoredDrawable{*o, _shader, _box,
-        Matrix4::scaling(Vector3{0.25f}), _drawables};
+            Matrix4::scaling(Vector3{0.25f}), _drawables};
+
+        Object3D* line = new Object3D{&_scene};
+        Vector3 a = Vector3{0.0f, 0.0f, 0.0f};
+        Vector3 b = Vector3{v.x(), 0.0f, v.y()};
+
+        new PacketLineDrawable{*line, _line_shader, a, b, _drawables};
     }
-
-
 
     Object3D *cow = new Object3D{&_scene};
     Matrix4 scaling = Matrix4::scaling(Vector3{10});
     cow->transform(scaling);
+    cow->rotateX(60.0_degf);
     new RingDrawable{*cow, 0x0000ff_rgbf,_drawables};
 
     Object3D *cor = new Object3D{&_scene};
@@ -186,7 +212,7 @@ ObjSelect::ObjSelect(const Arguments& arguments): Platform::Application(argument
     new RingDrawable{*cor, 0xff000088_rgbaf,_drawables};
 
     Object3D *cog = new Object3D{&_scene};
-    cog->rotateY(90.0_degf);
+    cog->rotateX(-60.0_degf);
     cog->transform(scaling);
     new RingDrawable{*cog, 0x00ff0088_rgbaf,_drawables};
 
@@ -234,8 +260,6 @@ void ObjSelect::drawEvent() {
     ImGui::End();
 
 
-    /* Set appropriate states. If you only draw imgui UI, it is sufficient to
-       do this once in the constructor. */
     GL::Renderer::enable(GL::Renderer::Feature::Blending);
     GL::Renderer::disable(GL::Renderer::Feature::FaceCulling);
     GL::Renderer::disable(GL::Renderer::Feature::DepthTest);
@@ -243,8 +267,6 @@ void ObjSelect::drawEvent() {
 
     _imgui.drawFrame();
 
-    /* Reset state. Only needed if you want to draw something else with
-       different state next frame. */
     GL::Renderer::disable(GL::Renderer::Feature::ScissorTest);
     GL::Renderer::enable(GL::Renderer::Feature::DepthTest);
     GL::Renderer::enable(GL::Renderer::Feature::FaceCulling);

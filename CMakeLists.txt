@@ -3321,6 +3321,8 @@ if (NOT "${SHELLCHECK_EXECUTABLE}" STREQUAL "SHELLCHECK_EXECUTABLE-NOTFOUND")
 	)
 endif()
 
+include(IMakeListsCustom.txt)
+
 #
 # Editor modelines  -  http://www.wireshark.org/tools/modelines.html
 #
