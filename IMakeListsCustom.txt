@@ -27,17 +27,6 @@ target_link_libraries(xxx PRIVATE
     ${LIBEPAN_LIBS}
     )
 
-message(STATUS "----------------------------------")
-message(STATUS ${LIBEPAN_LIBS})
-message(STATUS ${PCAP_LIBRARIES})
-message(STATUS ${GLIB2_LIBRARIES})
-message(STATUS ${TSHARK_TAP_SRC})
-message(STATUS ${APPLE_CORE_FOUNDATION_LIBRARY})
-message(STATUS "----------------------------------")
-message(STATUS "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-message(STATUS ${HAVE_LIBPCAP})
-message(STATUS "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-
 register_tap_files(ebc-tap-register.c ${TSHARK_TAP_SRC})
 
 set(ebc_FILES
@@ -49,7 +38,6 @@ set(ebc_FILES
 )
 
 add_executable(ebc ${ebc_FILES})
-
 
 set(EBC_LIBS
     ui

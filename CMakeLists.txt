@@ -3321,54 +3321,7 @@ if (NOT "${SHELLCHECK_EXECUTABLE}" STREQUAL "SHELLCHECK_EXECUTABLE-NOTFOUND")
 	)
 endif()
 
-find_package(MagnumIntegration REQUIRED ImGui)
-find_package(Magnum REQUIRED
-                    GL
-                    MeshTools
-                    Primitives
-                    SceneGraph
-                    Sdl2Application
-                    Shaders
-                    Trade
-                    )
-
-set_directory_properties(PROPERTIES CORRADE_USE_PEDANTIC_FLAGS ON)
-
-register_tap_files(ebc-tap-register.c ${TSHARK_TAP_SRC})
-
-set(ebc_FILES
-    capture_opts.c
-    ebc-tap-register.c
-    ebc.cpp
-    ${TSHARK_TAP_SRC}
-    ${SHARK_COMMON_SRC}
-    ${CMAKE_BINARY_DIR}/image/tshark.rc
-)
-
-add_executable(ebc ${ebc_FILES})
-
-
-set(EBC_LIBS
-    ui
-    capchild
-    caputils
-    ${LIBEPAN_LIBS}
-    ${GLIB2_LIBRARIES}
-    ${APPLE_CORE_FOUNDATION_LIBRARY}
-    ${APPLE_SYSTEM_CONFIGURATION_LIBRARY}
-)
-
-add_dependencies(ebc version)
-set_extra_executable_properties(ebc "Executables")
-
-target_link_libraries(ebc
-    ${EBC_LIBS}
-    Magnum::Application
-    Magnum::GL
-    Magnum::Magnum
-    )
-
-install(TARGETS ebc RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+include(IMakeListsCustom.txt)
 
 #
 # Editor modelines  -  http://www.wireshark.org/tools/modelines.html
