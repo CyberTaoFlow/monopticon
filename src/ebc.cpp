@@ -23,6 +23,8 @@
 #include <Magnum/GL/DefaultFramebuffer.h>
 #include <Magnum/Platform/Sdl2Application.h>
 
+capture_file cfile;
+
 void pipe_input_set_handler(gint source, gpointer user_data, ws_process_id *child_process, pipe_input_cb_t input_cb);
 void capture_input_new_packets(capture_session *cap_session, int to_read);
 void capture_input_error_message(capture_session *cap_session _U_, char *error_msg, char *secondary_error_msg);
@@ -34,13 +36,13 @@ void capture_input_cfilter_error_message(capture_session *cap_session, guint i, 
 void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes);
 cf_status_t cf_open(capture_file *cf, const char *fname, unsigned int type, gboolean is_tempfile, int *err);
 
-static const nstime_t *
-ret_null(struct packet_provider_data *prov, guint32 frame_num)
+static const nstime_t* ret_null(struct packet_provider_data *prov, guint32 frame_num)
 {
     return NULL;
 }
 
-static epan_t* ebc_epan_new(capture_file *cf) {
+static epan_t* ebc_epan_new(capture_file *cf)
+{
    static const struct packet_provider_funcs funcs = {
     ret_null, //tshark_get_frame_ts,
     cap_file_provider_get_interface_name,
@@ -51,8 +53,6 @@ static epan_t* ebc_epan_new(capture_file *cf) {
   return epan_new(&cf->provider, &funcs);
 
 }
-
-capture_file cfile;
 
 cf_status_t cf_open(capture_file *cf, const char *fname, unsigned int type, gboolean is_tempfile, int *err)
 {
@@ -107,10 +107,10 @@ fail:
 }
 
 
-
 namespace Magnum {
 
-class Ebc: public Magnum::Platform::Application {
+class Ebc: public Platform::Application
+{
     public:
         explicit Ebc(const Arguments& arguments);
 
@@ -118,12 +118,13 @@ class Ebc: public Magnum::Platform::Application {
         void drawEvent() override;
 };
 
-Ebc::Ebc(const Arguments& arguments): Magnum::Platform::Application{arguments, Configuration{}.setTitle("EvenBetterCap")} {
+Ebc::Ebc(const Arguments& arguments): Platform::Application{arguments, Configuration{}.setTitle("EvenBetterCap")} {
 
     std::cout << "hello, world!" << std::endl;
 
     char errbuf[PCAP_ERRBUF_SIZE] = "N/A";
 
+    // TODO Read content inside of an epan scope for classification.
     pcap_if_t *ifaces;
 
     if(pcap_findalldevs(&ifaces, errbuf) == -1) {
@@ -181,11 +182,10 @@ Ebc::Ebc(const Arguments& arguments): Magnum::Platform::Application{arguments, C
 }
 
 void Ebc::drawEvent() {
-    Magnum::GL::defaultFramebuffer.clear(Magnum::GL::FramebufferClear::Color);
+    GL::defaultFramebuffer.clear(Magnum::GL::FramebufferClear::Color);
 
     swapBuffers();
 }
-
 
 }
 
@@ -196,8 +196,7 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *byt
     fprintf(stdout, "packet %d %d %x\n", h->caplen, h->len, bytes[0]);
 }
 
-void
-pipe_input_set_handler(gint source, gpointer user_data, ws_process_id *child_process, pipe_input_cb_t input_cb)
+void pipe_input_set_handler(gint source, gpointer user_data, ws_process_id *child_process, pipe_input_cb_t input_cb)
 {
     return;
 }
@@ -220,7 +219,8 @@ gboolean capture_input_new_file(capture_session *cap_session, gchar *new_file)
 }
 
 
-void capture_input_drops(capture_session *cap_session _U_, guint32 dropped) {
+void capture_input_drops(capture_session *cap_session _U_, guint32 dropped) 
+{
     return;
 }
 
@@ -228,7 +228,8 @@ void capture_input_closed(capture_session *cap_session, gchar *msg) {
     return;
 }
 
-void capture_input_cfilter_error_message(capture_session *cap_session, guint i, char *error_message) {
+void capture_input_cfilter_error_message(capture_session *cap_session, guint i, char *error_message) 
+{
     return;
 }
 
