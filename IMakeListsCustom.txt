@@ -53,6 +53,8 @@ target_link_libraries(ebc
     ${EBC_LIBS}
     )
 
+target_compile_options(ebc PRIVATE "-w")
+
 set_target_properties(xxx ebc
   PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

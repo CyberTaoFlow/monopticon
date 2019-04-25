@@ -4,16 +4,17 @@
 
 #include <file.h>
 #include <cfile.h>
-#include <pcap.h>
-#include <epan/epan.h>
-#include <epan/addr_resolv.h>
+#include <capture_info.h>
 #include <capchild/capture_session.h>
 #include <capchild/capture_sync.h>
-#include <capture_info.h>
-
-#include <ui/ws_ui_util.h>
+#include <caputils/capture-pcap-util.h>
+#include <epan/addr_resolv.h>
+#include <epan/epan.h>
+#include <epan/funnel.h>
+#include <pcap.h>
 #include <ui/capture.h>
-
+#include <ui/ws_ui_util.h>
+#include <version_info.h>
 
 #include <Corrade/Containers/Array.h>
 #include <Corrade/Containers/Optional.h>
@@ -106,6 +107,12 @@ fail:
   return CF_ERROR;
 }
 
+static void
+get_tshark_compiled_version_info(GString *str)
+{
+  /* Capture libraries */
+  get_compiled_caplibs_version(str);
+}
 
 namespace Magnum {
 
@@ -120,23 +127,41 @@ class Ebc: public Platform::Application
 
 Ebc::Ebc(const Arguments& arguments): Platform::Application{arguments, Configuration{}.setTitle("EvenBetterCap")} {
 
-    std::cout << "hello, world!" << std::endl;
-
-    char errbuf[PCAP_ERRBUF_SIZE] = "N/A";
-
-    // TODO Read content inside of an epan scope for classification.
-    pcap_if_t *ifaces;
-
-    if(pcap_findalldevs(&ifaces, errbuf) == -1) {
-        fprintf(stderr, "Couldn't find default device: %s\n", errbuf);
-        std::exit(1);
-    }
-
     Magnum::Utility::Arguments args;
     args.addArgument("filename").setHelp("filename","the pcap file to process")
         .addSkippedPrefix("magnum", "engine-specific options")
         .setHelp("Displays the Ethernet Broadcast Domain in 3D.")
         .parse(arguments.argc, arguments.argv);
+
+    std::cout << "hello, world!" << std::endl;
+
+    initialize_funnel_ops();
+
+    /* Get the compile-time version information string */
+    GString* comp_info_str = get_compiled_version_info(get_tshark_compiled_version_info,
+                                            epan_get_compiled_version_info);
+
+
+    /* Get the run-time version information string */
+    GString* runtime_info_str = get_runtime_version_info(get_runtime_caplibs_version);
+
+    gchar * v = "evenbettercap";
+
+    show_version(v,comp_info_str, runtime_info_str);
+
+    g_string_free(comp_info_str, TRUE);
+    g_string_free(runtime_info_str, TRUE);
+
+    std::cout << "hello other world!" << std::endl;
+
+    epan_load_settings();
+    write_prefs(NULL);
+
+    std::cout << "hello third world!" << std::endl;
+
+
+    char errbuf[PCAP_ERRBUF_SIZE] = "N/A";
+    // TODO Read content inside of an epan scope for classification.
 
     std::cout << args.value("filename") << std::endl;
 
