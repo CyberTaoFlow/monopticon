@@ -3,6 +3,9 @@
 #include <iostream>
 #include <unistd.h>
 #include <sys/types.h>
+#include <glib/gprintf.h>
+#include <exception>
+#include "frame_tvbuff.h"
 
 #include "file.h"
 #include "cfile.h"
@@ -21,6 +24,7 @@
 #include <epan/rtd_table.h>
 #include <epan/srt_table.h>
 #include <epan/stat_tap_ui.h>
+#include <epan/tap.h>
 #include <epan/timestamp.h>
 #include "pcap.h"
 #include "log.h"
@@ -51,6 +55,14 @@ capture_file cfile;
 static capture_options global_capture_opts;
 static capture_session global_capture_session;
 
+// OMG
+static guint32 cum_bytes;
+static frame_data ref_frame;
+static frame_data prev_dis_frame;
+static frame_data prev_cap_frame;
+
+void cleanup_garbage();
+
 void pipe_input_set_handler(gint source, gpointer user_data, ws_process_id *child_process, pipe_input_cb_t input_cb);
 void capture_input_new_packets(capture_session *cap_session, int to_read);
 void capture_input_error_message(capture_session *cap_session _U_, char *error_msg, char *secondary_error_msg);
@@ -59,8 +71,11 @@ void capture_input_drops(capture_session *cap_session _U_, guint32 dropped);
 void capture_input_closed(capture_session *cap_session, gchar *msg);
 void capture_input_cfilter_error_message(capture_session *cap_session, guint i, char *error_message);
 
-void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes);
 cf_status_t cf_open(capture_file *cf, const char *fname, unsigned int type, gboolean is_tempfile, int *err);
+
+static gboolean process_packet_single_pass(capture_file *cf, epan_dissect_t *edt, gint64 offset,
+                                           wtap_rec *rec, const guchar *pd, guint tap_flags);
+static gboolean process_cap_file(capture_file *cf, int max_packet_count, gint64 max_byte_count);
 
 static const nstime_t* ret_null(struct packet_provider_data *prov, guint32 frame_num)
 {
@@ -87,8 +102,9 @@ cf_status_t cf_open(capture_file *cf, const char *fname, unsigned int type, gboo
 
   bool perform_two_pass_analysis = false;
   wth = wtap_open_offline(fname, type, err, &err_info, perform_two_pass_analysis);
-  if (wth == NULL)
-    goto fail;
+  if (wth == NULL) {
+    throw "Failed to open wtap offline";
+  }
 
   /* The open succeeded.  Fill in the information for this file. */
 
@@ -126,10 +142,6 @@ cf_status_t cf_open(capture_file *cf, const char *fname, unsigned int type, gboo
   wtap_set_cb_new_ipv4(cf->provider.wth, add_ipv4_name);
 
   return CF_OK;
-
-fail:
-  std::cout << "Capture File open failed" << std::endl;
-  return CF_ERROR;
 }
 
 // NOTE robbed from capture_sync.c
@@ -186,149 +198,142 @@ class Ebc: public Platform::Application
 
 Ebc::Ebc(const Arguments& arguments): Platform::Application{arguments, Configuration{}.setTitle("EvenBetterCap")} {
 
-    volatile int exit_status = EXIT_SUCCESS;
-
-    e_prefs             *prefs_p;
+    e_prefs *prefs_p;
     gboolean prefs_loaded = FALSE;
     print_format_e print_format = PR_FMT_TEXT;
     print_stream_t* print_stream = NULL;
     const char* delimiter_char;
 
-    const char *output_file_name;
     output_fields_t* output_fields;
-    const gchar* cf_name;
     volatile int in_file_type = WTAP_TYPE_AUTO;
     int err;
 
     Magnum::Utility::Arguments args;
-    args.addArgument("filename").setHelp("filename","the pcap file to process")
+    args.addArgument("filename").setHelp("filename", "the pcap file to process")
         .addSkippedPrefix("magnum", "engine-specific options")
         .setHelp("Displays the Ethernet Broadcast Domain in 3D.")
         .parse(arguments.argc, arguments.argv);
 
-    std::cout << "hello, world!" << std::endl;
+    try {
+      initialize_funnel_ops();
 
-    initialize_funnel_ops();
-
-    /* Get the compile-time version information string */
-    GString* comp_info_str = get_compiled_version_info(get_tshark_compiled_version_info,
-                                            epan_get_compiled_version_info);
+      /* Get the compile-time version information string */
+      GString* comp_info_str = get_compiled_version_info(get_tshark_compiled_version_info,
+                                              epan_get_compiled_version_info);
 
 
-    /* Get the run-time version information string */
-    GString* runtime_info_str = get_runtime_version_info(get_runtime_caplibs_version);
+      /* Get the run-time version information string */
+      GString* runtime_info_str = get_runtime_version_info(get_runtime_caplibs_version);
 
-    gchar * v = "evenbettercap";
+      gchar * v = "evenbettercap";
 
-    show_version(v,comp_info_str, runtime_info_str);
+      show_version(v,comp_info_str, runtime_info_str);
 
-    g_string_free(comp_info_str, TRUE);
-    g_string_free(runtime_info_str, TRUE);
+      g_string_free(comp_info_str, TRUE);
+      g_string_free(runtime_info_str, TRUE);
 
-    int log_flags =
-                    G_LOG_LEVEL_ERROR|
-                    G_LOG_LEVEL_CRITICAL|
-                    G_LOG_LEVEL_WARNING|
-                    G_LOG_LEVEL_MESSAGE|
-                    G_LOG_LEVEL_INFO|
-                    G_LOG_LEVEL_DEBUG|
-                    G_LOG_FLAG_FATAL|G_LOG_FLAG_RECURSION;
+      int log_flags =
+                      G_LOG_LEVEL_ERROR|
+                      G_LOG_LEVEL_CRITICAL|
+                      G_LOG_LEVEL_WARNING|
+                      G_LOG_LEVEL_MESSAGE|
+                      G_LOG_LEVEL_INFO|
+                      G_LOG_LEVEL_DEBUG|
+                      G_LOG_FLAG_FATAL|G_LOG_FLAG_RECURSION;
 
-    g_log_set_handler(NULL,
-                    (GLogLevelFlags)log_flags,
-                    tshark_log_handler, NULL /* user_data */);
-    g_log_set_handler(LOG_DOMAIN_MAIN,
-                    (GLogLevelFlags)log_flags,
-                    tshark_log_handler, NULL /* user_data */);
+      g_log_set_handler(NULL,
+                      static_cast<GLogLevelFlags>(log_flags),
+                      tshark_log_handler, NULL /* user_data */);
+      g_log_set_handler(LOG_DOMAIN_MAIN,
+                      static_cast<GLogLevelFlags>(log_flags),
+                      tshark_log_handler, NULL /* user_data */);
 
-    g_log_set_handler(LOG_DOMAIN_CAPTURE,
-                    (GLogLevelFlags)log_flags,
-                    tshark_log_handler, NULL /* user_data */);
-    g_log_set_handler(LOG_DOMAIN_CAPTURE_CHILD,
-                    (GLogLevelFlags)log_flags,
-                    tshark_log_handler, NULL /* user_data */);
+      g_log_set_handler(LOG_DOMAIN_CAPTURE,
+                      static_cast<GLogLevelFlags>(log_flags),
+                      tshark_log_handler, NULL /* user_data */);
+      g_log_set_handler(LOG_DOMAIN_CAPTURE_CHILD,
+                      static_cast<GLogLevelFlags>(log_flags),
+                      tshark_log_handler, NULL /* user_data */);
 
-    capture_opts_init(&global_capture_opts);
-    //capture_session_init(&global_capture_session, &cfile);
+      capture_opts_init(&global_capture_opts);
+      //capture_session_init(&global_capture_session, &cfile);
 
-    timestamp_set_type(TS_RELATIVE);
-    timestamp_set_precision(TS_PREC_AUTO);
-    timestamp_set_seconds_type(TS_SECONDS_DEFAULT);
+      timestamp_set_type(TS_RELATIVE);
+      timestamp_set_precision(TS_PREC_AUTO);
+      timestamp_set_seconds_type(TS_SECONDS_DEFAULT);
 
-    std::cout << "YYYY" << std::endl;
-    wtap_init(TRUE);
-    std::cout << "ZZZZ" << std::endl;
-    if (!epan_init(register_all_protocols, register_all_protocol_handoffs, NULL,
-                   NULL)) {
+      wtap_init(TRUE);
+      if (!epan_init(register_all_protocols, register_all_protocol_handoffs, NULL,
+                     NULL)) {
 
-      exit_status = INIT_FAILED;
-      goto clean_exit;
+        throw "Initialization Failed";
+      }
+
+      // Register all tap listeners.
+      extcap_register_preferences();
+      for (tap_reg_t *t = tap_reg_listener; t->cb_func != NULL; t++) {
+        t->cb_func();
+      }
+
+      /*
+      conversation_table_set_gui_info(init_iousers);
+      hostlist_table_set_gui_info(init_hostlists);
+      srt_table_iterate_tables(register_srt_tables, NULL);
+      rtd_table_iterate_tables(register_rtd_tables, NULL);
+      stat_tap_iterate_tables(register_simple_stat_tables, NULL);
+      */
+
+      /* Load libwireshark settings from the current profile. */
+      prefs_p = epan_load_settings();
+      //write_prefs(NULL);
+      prefs_loaded = TRUE;
+
+      read_filter_list(CFILTER_LIST);
+
+      cap_file_init(&cfile);
+
+      /* Print format defaults to this. */
+      print_format = PR_FMT_TEXT;
+      delimiter_char = " ";
+
+      output_fields = output_fields_new();
+
+
+      prefs_apply_all();
+
+      //start_exportobjects();
+
+      timestamp_set_type(global_dissect_options.time_format);
+
+      if (!setup_enabled_and_disabled_protocols()) {
+        throw "Could not setup protocols";
+      }
+
+      print_stream = print_stream_text_stdio_new(stdout);
+
+      std::string s = args.value("filename");
+      const gchar* cf_name = s.c_str();
+      if (cf_open(&cfile, cf_name, in_file_type, FALSE, &err) != CF_OK) {
+
+        epan_cleanup();
+        extcap_cleanup();
+
+        throw "Could not open file";
+      }
+
+      start_requested_stats();
+
+      std::cout << "hello third world!" << std::endl;
+
+      bool success = process_cap_file(&cfile, 9001, 9001);
+
+      std::cout << "Made it to the end of main" << std::endl;
+
+    } catch (std::exception& e) {
+        std::cout << e.what() << std::endl;
+        cleanup_garbage();
+        std::exit(1);
     }
-    std::cout << "XXXX" << std::endl;
-
-    // Register all tap listeners.
-    extcap_register_preferences();
-    for (tap_reg_t *t = tap_reg_listener; t->cb_func != NULL; t++) {
-      t->cb_func();
-    }
-
-    /*
-    conversation_table_set_gui_info(init_iousers);
-    hostlist_table_set_gui_info(init_hostlists);
-    srt_table_iterate_tables(register_srt_tables, NULL);
-    rtd_table_iterate_tables(register_rtd_tables, NULL);
-    stat_tap_iterate_tables(register_simple_stat_tables, NULL);
-    */
-
-    std::cout << "hello third world!" << std::endl;
-
-    /* Load libwireshark settings from the current profile. */
-    prefs_p = epan_load_settings();
-    //write_prefs(NULL);
-    prefs_loaded = TRUE;
-
-    read_filter_list(CFILTER_LIST);
-
-    cap_file_init(&cfile);
-
-
-    /* Print format defaults to this. */
-    print_format = PR_FMT_TEXT;
-    delimiter_char = " ";
-
-    output_fields = output_fields_new();
-
-    output_file_name = args.value("filename").c_str();
-    cf_name = g_strdup(output_file_name);
-
-    prefs_apply_all();
-
-    //start_exportobjects();
-
-    timestamp_set_type(global_dissect_options.time_format);
-
-    if (!setup_enabled_and_disabled_protocols()) {
-      exit_status = INVALID_OPTION;
-      goto clean_exit;
-    }
-
-    print_stream = print_stream_text_stdio_new(stdout);
-
-    if (cf_open(&cfile, cf_name, in_file_type, FALSE, &err) != CF_OK) {
-      epan_cleanup();
-      extcap_cleanup();
-      exit_status = INVALID_FILE;
-      goto clean_exit;
-    }
-
-
-clean_exit:
-    capture_opts_cleanup(&global_capture_opts);
-
-    epan_cleanup();
-    wtap_cleanup();
-    //cf_close(&cfile);
-    std::exit(exit_status);
 }
 
 void Ebc::drawEvent() {
@@ -339,11 +344,104 @@ void Ebc::drawEvent() {
 
 }
 
-
-void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
+void cleanup_garbage()
 {
-    printf("%s\n", user);
-    fprintf(stdout, "packet %d %d %x\n", h->caplen, h->len, bytes[0]);
+  capture_opts_cleanup(&global_capture_opts);
+  epan_cleanup();
+  wtap_cleanup();
+  //cf_close(&cfile);
+}
+
+static gboolean process_cap_file(capture_file *cf, int max_packet_count, gint64 max_byte_count)
+{
+  wtap_rec rec;
+  wtap_rec_init(&rec);
+
+  int tap_flags;
+  gchar* err_info;
+  gint64 data_offset;
+  int err;
+
+  wtapng_iface_descriptions_t *idb_inf = wtap_file_get_idb_info(cf->provider.wth);
+  gint linktype = wtap_file_encap(cf->provider.wth);
+
+  int snapshot_length = wtap_snapshot_length(cf->provider.wth);
+
+  gboolean filtering_tap_listeners = have_filtering_tap_listeners();
+
+  tap_flags = union_of_tap_listener_flags();
+
+  bool create_proto_tree = false;
+  bool print_packet_info = false;
+
+  epan_dissect_t* edt = epan_dissect_new(cf->epan, create_proto_tree, print_packet_info);
+
+  while (wtap_read(cf->provider.wth, &err, &err_info, &data_offset)) {
+    //reset_epan_mem(cf, edt, create_proto_tree, print_packet_info);
+
+    process_packet_single_pass(cf, edt, data_offset, wtap_get_rec(cf->provider.wth),
+                               wtap_get_buf_ptr(cf->provider.wth), tap_flags);
+    // Can print framenum here
+  }
+
+  g_free(idb_inf);
+  wtap_sequential_close(cf->provider.wth);
+  postseq_cleanup_all_protocols();
+
+  wtap_rec_cleanup(&rec);
+
+  wtap_close(cf->provider.wth);
+  cf->provider.wth = NULL;
+
+  return true;
+}
+
+static gboolean process_packet_single_pass(capture_file *cf, epan_dissect_t *edt, gint64 offset,
+                                           wtap_rec *rec, const guchar *pd, guint tap_flags)
+{
+
+  frame_data      fdata;
+  column_info    *cinfo;
+
+
+  bool passed;
+
+  cf->count++;
+  frame_data_init(&fdata, cf->count, rec, offset, cum_bytes);
+
+  g_assert(edt);
+  if (cf->dfcode)
+    epan_dissect_prime_with_dfilter(edt, cf->dfcode);
+
+  frame_data_set_before_dissect(&fdata, &cf->elapsed_time,
+                                &cf->provider.ref, cf->provider.prev_dis);
+  if (cf->provider.ref == &fdata) {
+    ref_frame = fdata;
+    cf->provider.ref = &ref_frame;
+  }
+
+  epan_dissect_run_with_taps(edt, cf->cd_t, rec,
+                             frame_tvbuff_new(&cf->provider, &fdata, pd),
+                             &fdata, cinfo);
+
+  /* Run the filter if we have it. */
+  if (cf->dfcode)
+    passed = dfilter_apply_edt(cf->dfcode, edt);
+
+  frame_data_set_after_dissect(&fdata, &cum_bytes);
+
+  g_assert(edt);
+  //print_packet(cf, edt);
+  // epan_dissect_fill_in_columns // here
+  // must do this cleanup
+  prev_dis_frame = fdata;
+  cf->provider.prev_dis = &prev_dis_frame;
+
+  prev_cap_frame = fdata;
+  cf->provider.prev_cap = &prev_cap_frame;
+
+  epan_dissect_reset(edt);
+  frame_data_destroy(&fdata);
 }
 
 void pipe_input_set_handler(gint source, gpointer user_data, ws_process_id *child_process, pipe_input_cb_t input_cb)
