@@ -15,6 +15,7 @@
 #include <capchild/capture_session.h>
 #include <caputils/capture-pcap-util.h>
 #include <epan/addr_resolv.h>
+#include <epan/column.h>
 #include <epan/conversation_table.h>
 #include <epan/epan.h>
 #include <epan/funnel.h>
@@ -71,9 +72,10 @@ void capture_input_drops(capture_session *cap_session _U_, guint32 dropped);
 void capture_input_closed(capture_session *cap_session, gchar *msg);
 void capture_input_cfilter_error_message(capture_session *cap_session, guint i, char *error_message);
 
+void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes);
 cf_status_t cf_open(capture_file *cf, const char *fname, unsigned int type, gboolean is_tempfile, int *err);
 
-static gboolean process_packet_single_pass(capture_file *cf, epan_dissect_t *edt, gint64 offset,
+void process_packet_single_pass(capture_file *cf, epan_dissect_t *edt, gint64 offset,
                                            wtap_rec *rec, const guchar *pd, guint tap_flags);
 static gboolean process_cap_file(capture_file *cf, int max_packet_count, gint64 max_byte_count);
 
@@ -225,9 +227,9 @@ Ebc::Ebc(const Arguments& arguments): Platform::Application{arguments, Configura
       /* Get the run-time version information string */
       GString* runtime_info_str = get_runtime_version_info(get_runtime_caplibs_version);
 
-      gchar * v = "evenbettercap";
+      const char * v = "evenbettercap";
 
-      show_version(v,comp_info_str, runtime_info_str);
+      show_version(v, comp_info_str, runtime_info_str);
 
       g_string_free(comp_info_str, TRUE);
       g_string_free(runtime_info_str, TRUE);
@@ -291,6 +293,9 @@ Ebc::Ebc(const Arguments& arguments): Platform::Application{arguments, Configura
       read_filter_list(CFILTER_LIST);
 
       cap_file_init(&cfile);
+
+      build_column_format_array(&cfile.cinfo, prefs_p->num_cols, TRUE);
+      column_dump_column_formats();
 
       /* Print format defaults to this. */
       print_format = PR_FMT_TEXT;
@@ -396,14 +401,12 @@ static gboolean process_cap_file(capture_file *cf, int max_packet_count, gint64 
   return true;
 }
 
-static gboolean process_packet_single_pass(capture_file *cf, epan_dissect_t *edt, gint64 offset,
+void process_packet_single_pass(capture_file *cf, epan_dissect_t *edt, gint64 offset,
                                            wtap_rec *rec, const guchar *pd, guint tap_flags)
 {
 
-  frame_data      fdata;
-  column_info    *cinfo;
-
-
+  frame_data fdata;
+  column_info *cinfo;
   bool passed;
 
   cf->count++;
@@ -446,38 +449,45 @@ static gboolean process_packet_single_pass(capture_file *cf, epan_dissect_t *edt
 
 void pipe_input_set_handler(gint source, gpointer user_data, ws_process_id *child_process, pipe_input_cb_t input_cb)
 {
+    std::cout << "aaa" << std::endl;
     return;
 }
 
 /* capture child tells us we have new packets to read */
 void capture_input_new_packets(capture_session *cap_session, int to_read)
 {
+    std::cout << "bbb" << std::endl;
     return;
 }
 
 void capture_input_error_message(capture_session *cap_session _U_, char *error_msg, char *secondary_error_msg)
 {
+    std::cout << "ccc" << std::endl;
     return;
 }
 
 /* capture child tells us we have a new (or the first) capture file */
 gboolean capture_input_new_file(capture_session *cap_session, gchar *new_file)
 {
+    std::cout << "ddd" << std::endl;
     return TRUE;
 }
 
 
 void capture_input_drops(capture_session *cap_session _U_, guint32 dropped) 
 {
+    std::cout << "eee" << std::endl;
     return;
 }
 
 void capture_input_closed(capture_session *cap_session, gchar *msg) {
+    std::cout << "fff" << std::endl;
     return;
 }
 
 void capture_input_cfilter_error_message(capture_session *cap_session, guint i, char *error_message) 
 {
+    std::cout << "ggg" << std::endl;
     return;
 }
 
