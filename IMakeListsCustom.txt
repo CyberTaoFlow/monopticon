@@ -100,6 +100,17 @@ target_link_libraries(zeek_receiver
                       caf_core
                       )
 
-set_target_properties(frankenshark xxx ebc l2_logstream zeek_receiver
+add_executable(boost_queues src/boost_queues.cpp)
+
+# TODO ensure that BOOST is linked
+
+target_link_libraries(boost_queues
+                      broker
+                      caf_core
+                      pthread
+                      )
+
+
+set_target_properties(frankenshark xxx ebc l2_logstream zeek_receiver boost_queues
   PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
