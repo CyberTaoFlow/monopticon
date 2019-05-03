@@ -62,8 +62,44 @@ target_link_libraries(ebc
     ${EBC_LIBS}
     )
 
-target_compile_options(ebc PRIVATE "-w")
+#target_compile_options(ebc PRIVATE "-w")
 
-set_target_properties(xxx ebc
+register_tap_files(frankenshark-tap-register.c
+	${TSHARK_TAP_SRC}
+)
+
+set(frankenshark_LIBS
+	ui
+	capchild
+	caputils
+	${LIBEPAN_LIBS}
+	${APPLE_CORE_FOUNDATION_LIBRARY}
+	${APPLE_SYSTEM_CONFIGURATION_LIBRARY}
+)
+set(frankenshark_FILES
+	capture_opts.c
+	frankenshark-tap-register.c
+	src/frankenshark.cpp
+	${TSHARK_TAP_SRC}
+	${SHARK_COMMON_SRC}
+)
+add_executable(frankenshark ${frankenshark_FILES})
+add_dependencies(frankenshark version)
+target_link_libraries(frankenshark ${frankenshark_LIBS})
+
+set(l2_logstream_FILES
+    src/l2_logstream.cpp
+)
+
+add_executable(l2_logstream ${l2_logstream_FILES})
+target_link_libraries(l2_logstream)
+
+add_executable(zeek_receiver src/zeek_receiver.cpp)
+target_link_libraries(zeek_receiver
+                      broker
+                      caf_core
+                      )
+
+set_target_properties(frankenshark xxx ebc l2_logstream zeek_receiver
   PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
