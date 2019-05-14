@@ -4,7 +4,12 @@
 #include <unistd.h>
 #include <future>
 
+#include <boost/thread/thread.hpp>
+#include <boost/lockfree/queue.hpp>
+
 using namespace broker;
+
+boost::lockfree::queue<int> queue(256);
 
 // demo receiver that is subscribed to the topic "demo/threaded-simple"
 void broker_receiver() {
@@ -25,7 +30,9 @@ void broker_receiver() {
 }
 
 int main() {
-    std::thread(broker_receiver).detach();
+
+    boost::thread_group producer_threads, consumer_threads;
+    for (int i = 0; i != producer_thread
 
     // TODO try to read from Boost Queue here
     while(true) {

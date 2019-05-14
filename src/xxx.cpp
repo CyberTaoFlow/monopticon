@@ -36,6 +36,9 @@
 #include <Magnum/Shaders/Phong.h>
 #include <Magnum/Trade/MeshData3D.h>
 
+#include "broker/broker.hh"
+#include "broker/bro.hh"
+
 namespace Magnum { namespace Monopticon {
 
 using namespace Math::Literals;
@@ -131,8 +134,14 @@ class ObjSelect: public Platform::Application {
         void textInputEvent(TextInputEvent& event) override;
 
     private:
+        // Zeek broker components
+        broker::endpoint ep;
+        broker::subscriber subscriber;
+
+        // UI fields
         ImGuiIntegration::Context _imgui{NoCreate};
 
+        // Graphic fields
         GL::Mesh _box{NoCreate}, _circle{NoCreate};
         Color4 _clearColor = 0x002b36_rgbf;
         Color4 _pickColor = 0xffffff_rgbf;
@@ -160,7 +169,12 @@ ObjSelect::ObjSelect(const Arguments& arguments): Platform::Application(argument
             Configuration{}.setTitle("Monopticon").setWindowFlags(Configuration::WindowFlag::Borderless).setSize(Vector2i{1200,800}),
             GLConfiguration{}.setSampleCount(16)) {
     {
-    std::cout << "Made it here" << std::endl;
+    std::cout << "Waiting for broker connection" << std::endl;
+
+    subscriber = ep.make_subscriber({"monopt/l2"});
+    ep.listen("127.0.0.1", 9999);
+
+    std::cout << "Connection received" << std::endl;
 
     /* Camera setup */
     (*(_cameraRig = new Object3D{&_scene}))
@@ -235,10 +249,18 @@ ObjSelect::ObjSelect(const Arguments& arguments): Platform::Application(argument
     setSwapInterval(1);
     setMinimalLoopPeriod(16);
     _timeline.start();
+
+
     }
 }
 
 void ObjSelect::drawEvent() {
+    for (auto msg = subscriber.poll() )
+        broker::topic topic(std::move(msg.first));
+        broker::Event response(std::move(msg.second));
+        std::cout << "received on topic: " << topic << " event: " << event << std::endl;
+    }
+
     GL::defaultFramebuffer.clear(GL::FramebufferClear::Color|GL::FramebufferClear::Depth);
 
     GL::Renderer::setClearColor(_clearColor);

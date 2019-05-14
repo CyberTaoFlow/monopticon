@@ -19,6 +19,8 @@ add_subdirectory(src)
 
 add_executable(xxx src/xxx.cpp)
 target_link_libraries(xxx PRIVATE
+    broker
+    caf_core
     Magnum::Application
     Magnum::GL
     Magnum::Magnum
@@ -62,7 +64,8 @@ target_link_libraries(ebc
     ${EBC_LIBS}
     )
 
-#target_compile_options(ebc PRIVATE "-w")
+
+target_compile_options(xxx PRIVATE "-m32")
 
 register_tap_files(frankenshark-tap-register.c
 	${TSHARK_TAP_SRC}
@@ -94,23 +97,6 @@ set(l2_logstream_FILES
 add_executable(l2_logstream ${l2_logstream_FILES})
 target_link_libraries(l2_logstream)
 
-add_executable(zeek_receiver src/zeek_receiver.cpp)
-target_link_libraries(zeek_receiver
-                      broker
-                      caf_core
-                      )
-
-add_executable(boost_queues src/boost_queues.cpp)
-
-# TODO ensure that BOOST is linked
-
-target_link_libraries(boost_queues
-                      broker
-                      caf_core
-                      pthread
-                      )
-
-
-set_target_properties(frankenshark xxx ebc l2_logstream zeek_receiver boost_queues
+set_target_properties(frankenshark xxx ebc l2_logstream
   PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
