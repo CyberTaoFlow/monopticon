@@ -45,13 +45,6 @@
 broker::endpoint ep;
 broker::subscriber subscriber = ep.make_subscriber({"monopt/l2"});
 
-struct DeviceStats {
-  int num_pkts_sent;
-  int num_pkts_recv;
-};
-
-std::unordered_map<std::string, DeviceStats> device_map = {};
-
 namespace Magnum { namespace Monopticon {
 
 void parse_raw_packet(broker::bro::Event event);
@@ -62,6 +55,17 @@ typedef SceneGraph::Object<SceneGraph::MatrixTransformation3D> Object3D;
 typedef SceneGraph::Scene<SceneGraph::MatrixTransformation3D> Scene3D;
 
 Vector2 randCirclePoint();
+
+struct DeviceStats {
+  std::string mac_addr;
+  Vector2 CircPoint;
+  int num_pkts_sent;
+  int num_pkts_recv;
+};
+
+std::unordered_map<std::string, DeviceStats> device_map = {};
+
+
 
 class ColoredDrawable: public SceneGraph::Drawable3D {
     public:
@@ -148,6 +152,10 @@ class ObjSelect: public Platform::Application {
         void mouseScrollEvent(MouseScrollEvent& event) override;
         void textInputEvent(TextInputEvent& event) override;
 
+        void parse_raw_packet(broker::bro::Event event);
+        Vector2 createCircle();
+        void createLine(Vector2, Vector2);
+
     private:
 
         // UI fields
@@ -210,20 +218,7 @@ ObjSelect::ObjSelect(const Arguments& arguments): Platform::Application(argument
     _line_shader.setColor(0x00ffff_rgbf);
 
     srand(time(NULL));
-    for(Int i = 0; i != 10; ++i) {
-        Object3D* o = new Object3D{&_scene};
-        Vector2 v = 10.0f*randCirclePoint();
-        o->translate({v.x(), 0.0f, v.y()});
 
-        new ColoredDrawable{*o, _shader, _box,
-            Matrix4::scaling(Vector3{0.25f}), _drawables};
-
-        Object3D* line = new Object3D{&_scene};
-        Vector3 a = Vector3{0.0f, 0.0f, 0.0f};
-        Vector3 b = Vector3{v.x(), 0.0f, v.y()};
-
-        new PacketLineDrawable{*line, _line_shader, a, b, _drawables};
-    }
 
     Object3D *cow = new Object3D{&_scene};
     Matrix4 scaling = Matrix4::scaling(Vector3{10});
@@ -263,7 +258,7 @@ ObjSelect::ObjSelect(const Arguments& arguments): Platform::Application(argument
     }
 }
 
-void parse_raw_packet(broker::bro::Event event) {
+void ObjSelect::parse_raw_packet(broker::bro::Event event) {
     broker::vector parent_content = event.args();
 
     broker::vector *raw_pkt_hdr = broker::get_if<broker::vector>(parent_content.at(0));
@@ -284,22 +279,53 @@ void parse_raw_packet(broker::bro::Event event) {
     }
     std::string *mac_dst = broker::get_if<std::string>(l2_pkt_hdr->at(4));
 
+    Vector2 p1;
+    DeviceStats *d_s;
+
     auto search = device_map.find(*mac_src);
     if (search == device_map.end()) {
-        DeviceStats *d_s = new DeviceStats{0, 0};
+        p1 = createCircle();
+        d_s = new DeviceStats{*mac_src, p1, 1, 0};
         device_map.insert(std::make_pair(*mac_src, *d_s));
     } else {
-        search->first;
-        DeviceStats d_s = search->second;
-        d_s.num_pkts_sent += 1;
+        d_s = &(search->second);
+        p1 = d_s->CircPoint;
+        d_s->num_pkts_sent += 1;
+
     }
 
-    /*
-    if (l2_pkt_hdr != NULL) {
-        l2_pkt_hdr->clear();
-        delete l2_pkt_hdr;
-    }*/
+    Vector2 p2;
+    auto search_dst = device_map.find(*mac_dst);
+    if (search_dst == device_map.end()) {
+            p2 = createCircle();
+            d_s = new DeviceStats{*mac_dst, p2, 0, 1};
+            device_map.insert(std::make_pair(*mac_dst, *d_s));
+    } else {
+        p2 = search_dst->second.CircPoint;
+    }
+    createLine(p1, p2);
 }
+
+
+Vector2 ObjSelect::createCircle() {
+    Object3D* o = new Object3D{&_scene};
+    Vector2 v = 10.0f*randCirclePoint();
+    o->translate({v.x(), 0.0f, v.y()});
+
+    new ColoredDrawable{*o, _shader, _box,
+        Matrix4::scaling(Vector3{0.25f}), _drawables};
+    return v;
+}
+
+
+void ObjSelect::createLine(Vector2 a, Vector2 b) {
+        Object3D* line = new Object3D{&_scene};
+        Vector3 a3 = Vector3{a.x(), 0.0f, a.y()};
+        Vector3 b3 = Vector3{b.x(), 0.0f, b.y()};
+
+        new PacketLineDrawable{*line, _line_shader, a3, b3, _drawables};
+}
+
 
 void ObjSelect::drawEvent() {
     for (auto msg : subscriber.poll()) {
@@ -312,6 +338,8 @@ void ObjSelect::drawEvent() {
             std::cout << "Unhandled Event: " << event.name() << std::endl;
         }
     }
+
+    // Actually draw things
 
     GL::defaultFramebuffer.clear(GL::FramebufferClear::Color|GL::FramebufferClear::Depth);
 
