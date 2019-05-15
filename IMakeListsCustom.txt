@@ -64,39 +64,8 @@ target_link_libraries(ebc
     ${EBC_LIBS}
     )
 
+target_compile_options(xxx PRIVATE)
 
-target_compile_options(xxx PRIVATE "-m32")
-
-register_tap_files(frankenshark-tap-register.c
-	${TSHARK_TAP_SRC}
-)
-
-set(frankenshark_LIBS
-	ui
-	capchild
-	caputils
-	${LIBEPAN_LIBS}
-	${APPLE_CORE_FOUNDATION_LIBRARY}
-	${APPLE_SYSTEM_CONFIGURATION_LIBRARY}
-)
-set(frankenshark_FILES
-	capture_opts.c
-	frankenshark-tap-register.c
-	src/frankenshark.cpp
-	${TSHARK_TAP_SRC}
-	${SHARK_COMMON_SRC}
-)
-add_executable(frankenshark ${frankenshark_FILES})
-add_dependencies(frankenshark version)
-target_link_libraries(frankenshark ${frankenshark_LIBS})
-
-set(l2_logstream_FILES
-    src/l2_logstream.cpp
-)
-
-add_executable(l2_logstream ${l2_logstream_FILES})
-target_link_libraries(l2_logstream)
-
-set_target_properties(frankenshark xxx ebc l2_logstream
+set_target_properties(xxx ebc
   PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

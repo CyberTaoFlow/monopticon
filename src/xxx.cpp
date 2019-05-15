@@ -3,7 +3,6 @@
 #include <math.h>
 #include <ctime>
 
-#include "wireshark/epan/epan.h"
 #include <imgui.h>
 
 #include <Corrade/Containers/Optional.h>
@@ -37,9 +36,25 @@
 #include <Magnum/Trade/MeshData3D.h>
 
 #include "broker/broker.hh"
+#include "broker/message.hh"
 #include "broker/bro.hh"
 
+#include <unordered_map>
+
+// Zeek broker components
+broker::endpoint ep;
+broker::subscriber subscriber = ep.make_subscriber({"monopt/l2"});
+
+struct DeviceStats {
+  int num_pkts_sent;
+  int num_pkts_recv;
+};
+
+std::unordered_map<std::string, DeviceStats> device_map = {};
+
 namespace Magnum { namespace Monopticon {
+
+void parse_raw_packet(broker::bro::Event event);
 
 using namespace Math::Literals;
 
@@ -134,9 +149,6 @@ class ObjSelect: public Platform::Application {
         void textInputEvent(TextInputEvent& event) override;
 
     private:
-        // Zeek broker components
-        broker::endpoint ep;
-        broker::subscriber subscriber;
 
         // UI fields
         ImGuiIntegration::Context _imgui{NoCreate};
@@ -171,7 +183,6 @@ ObjSelect::ObjSelect(const Arguments& arguments): Platform::Application(argument
     {
     std::cout << "Waiting for broker connection" << std::endl;
 
-    subscriber = ep.make_subscriber({"monopt/l2"});
     ep.listen("127.0.0.1", 9999);
 
     std::cout << "Connection received" << std::endl;
@@ -249,16 +260,57 @@ ObjSelect::ObjSelect(const Arguments& arguments): Platform::Application(argument
     setSwapInterval(1);
     setMinimalLoopPeriod(16);
     _timeline.start();
-
-
     }
 }
 
+void parse_raw_packet(broker::bro::Event event) {
+    broker::vector parent_content = event.args();
+
+    broker::vector *raw_pkt_hdr = broker::get_if<broker::vector>(parent_content.at(0));
+    if (raw_pkt_hdr == NULL) {
+        std::cout << "rph" << std::endl;
+        return;
+    }
+    broker::vector *l2_pkt_hdr = broker::get_if<broker::vector>(raw_pkt_hdr->at(0));
+    if (l2_pkt_hdr == NULL || l2_pkt_hdr->size() != 9) {
+        std::cout << "lph" << std::endl;
+        return;
+    }
+
+    std::string *mac_src = broker::get_if<std::string>(l2_pkt_hdr->at(3));
+    if (mac_src == NULL) {
+        std::cout << "mac_src" << std::endl;
+        return;
+    }
+    std::string *mac_dst = broker::get_if<std::string>(l2_pkt_hdr->at(4));
+
+    auto search = device_map.find(*mac_src);
+    if (search == device_map.end()) {
+        DeviceStats *d_s = new DeviceStats{0, 0};
+        device_map.insert(std::make_pair(*mac_src, *d_s));
+    } else {
+        search->first;
+        DeviceStats d_s = search->second;
+        d_s.num_pkts_sent += 1;
+    }
+
+    /*
+    if (l2_pkt_hdr != NULL) {
+        l2_pkt_hdr->clear();
+        delete l2_pkt_hdr;
+    }*/
+}
+
 void ObjSelect::drawEvent() {
-    for (auto msg = subscriber.poll() )
-        broker::topic topic(std::move(msg.first));
-        broker::Event response(std::move(msg.second));
-        std::cout << "received on topic: " << topic << " event: " << event << std::endl;
+    for (auto msg : subscriber.poll()) {
+        broker::topic topic = broker::get_topic(msg);
+        broker::bro::Event event = broker::get_data(msg);
+        std::cout << "received on topic: " << topic << " event: " << event.args() << std::endl;
+        if (event.name().compare("raw_packet_event")) {
+            parse_raw_packet(event);
+        } else {
+            std::cout << "Unhandled Event: " << event.name() << std::endl;
+        }
     }
 
     GL::defaultFramebuffer.clear(GL::FramebufferClear::Color|GL::FramebufferClear::Depth);
@@ -280,7 +332,6 @@ void ObjSelect::drawEvent() {
     if(ImGui::ColorEdit3("Pick Background Color", _clearColor.data()))
         GL::Renderer::setClearColor(_clearColor);
     ImGui::End();
-
 
     GL::Renderer::enable(GL::Renderer::Feature::Blending);
     GL::Renderer::disable(GL::Renderer::Feature::FaceCulling);

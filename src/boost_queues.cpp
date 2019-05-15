@@ -13,8 +13,7 @@ boost::lockfree::queue<int> queue(256);
 
 // demo receiver that is subscribed to the topic "demo/threaded-simple"
 void broker_receiver() {
-    endpoint ep;
-    auto subscriber = ep.make_subscriber( {"demo/simple"} );
+    subscriber = new subscriber(ep, {"demo/simple"} );
     ep.listen("127.0.0.1", 9999);
 
     while(true) {

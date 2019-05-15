@@ -17,9 +17,11 @@ event zeek_init()
 event Broker::peer_added(endpoint: Broker::EndpointInfo, msg: string)
 {
     print "peer added", endpoint;
-    Broker::auto_publish("demo/simple", raw_packet);
+    Broker::auto_publish("monopt/l2", raw_packet);
     #Broker::auto_publish("demo/simple", new_packet);
 }
+
+#TODO try reconnect when a peer is lost
 
 #event new_packet(c: connection, p: pkt_hdr) {
 #
