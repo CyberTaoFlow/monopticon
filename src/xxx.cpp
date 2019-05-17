@@ -7,19 +7,32 @@
 
 #include <Corrade/Containers/Optional.h>
 #include <Corrade/Containers/Pointer.h>
+#include <Corrade/Containers/Reference.h>
+#include <Corrade/Utility/Resource.h>
 
 #include <Magnum/Timeline.h>
 #include <Magnum/Math/Color.h>
+#include <Magnum/Image.h>
+#include <Magnum/PixelFormat.h>
 #include <Magnum/GL/AbstractShaderProgram.h>
 #include <Magnum/GL/Buffer.h>
+#include <Magnum/GL/Context.h>
+#include <Magnum/GL/Shader.h>
+#include <Magnum/GL/Framebuffer.h>
 #include <Magnum/GL/DefaultFramebuffer.h>
 #include <Magnum/GL/Mesh.h>
+#include <Magnum/GL/Renderbuffer.h>
+#include <Magnum/GL/RenderbufferFormat.h>
 #include <Magnum/GL/Renderer.h>
+#include <Magnum/GL/Texture.h>
+#include <Magnum/GL/Version.h>
 #include <Magnum/Math/Constants.h>
 #include <Magnum/Math/Vector2.h>
 #include <Magnum/Math/Vector3.h>
 #include <Magnum/MeshTools/Compile.h>
 #include <Magnum/MeshTools/Transform.h>
+#include <Magnum/MeshTools/CompressIndices.h>
+#include <Magnum/MeshTools/Interleave.h>
 #include <Magnum/ImGuiIntegration/Context.hpp>
 #include <Magnum/Platform/Sdl2Application.h>
 #include <Magnum/Primitives/Cube.h>
@@ -66,24 +79,115 @@ struct DeviceStats {
 std::unordered_map<std::string, DeviceStats> device_map = {};
 
 
-
-class ColoredDrawable: public SceneGraph::Drawable3D {
+class PhongIdShader: public GL::AbstractShaderProgram {
     public:
-        explicit ColoredDrawable(Object3D& object, Shaders::Phong& shader, GL::Mesh& mesh, const Matrix4& primitiveTransformation, SceneGraph::DrawableGroup3D& drawables):
+        typedef GL::Attribute<0, Vector3> Position;
+        typedef GL::Attribute<1, Vector3> Normal;
+
+        enum: UnsignedInt {
+            ColorOutput = 0,
+            ObjectIdOutput = 1
+        };
+
+        explicit PhongIdShader();
+
+        PhongIdShader& setObjectId(UnsignedInt id) {
+            setUniform(_objectIdUniform, id);
+            return *this;
+        }
+
+        PhongIdShader& setLightPosition(const Vector3& position) {
+            setUniform(_lightPositionUniform, position);
+            return *this;
+        }
+
+        PhongIdShader& setAmbientColor(const Color3& color) {
+            setUniform(_ambientColorUniform, color);
+            return *this;
+        }
+
+        PhongIdShader& setColor(const Color3& color) {
+            setUniform(_colorUniform, color);
+            return *this;
+        }
+
+        PhongIdShader& setTransformationMatrix(const Matrix4& matrix) {
+            setUniform(_transformationMatrixUniform, matrix);
+            return *this;
+        }
+
+        PhongIdShader& setNormalMatrix(const Matrix3x3& matrix) {
+            setUniform(_normalMatrixUniform, matrix);
+            return *this;
+        }
+
+        PhongIdShader& setProjectionMatrix(const Matrix4& matrix) {
+            setUniform(_projectionMatrixUniform, matrix);
+            return *this;
+        }
+
+    private:
+        Int _objectIdUniform,
+            _lightPositionUniform,
+            _ambientColorUniform,
+            _colorUniform,
+            _transformationMatrixUniform,
+            _normalMatrixUniform,
+            _projectionMatrixUniform;
+};
+
+PhongIdShader::PhongIdShader() {
+    Utility::Resource rs("picking-data");
+
+    GL::Shader vert{GL::Version::GL330, GL::Shader::Type::Vertex},
+        frag{GL::Version::GL330, GL::Shader::Type::Fragment};
+    vert.addSource(rs.get("PhongId.vert"));
+    frag.addSource(rs.get("PhongId.frag"));
+    CORRADE_INTERNAL_ASSERT(GL::Shader::compile({vert, frag}));
+    attachShaders({vert, frag});
+    CORRADE_INTERNAL_ASSERT(link());
+
+    _objectIdUniform = uniformLocation("objectId");
+    _lightPositionUniform = uniformLocation("light");
+    _ambientColorUniform = uniformLocation("ambientColor");
+    _colorUniform = uniformLocation("color");
+    _transformationMatrixUniform = uniformLocation("transformationMatrix");
+    _projectionMatrixUniform = uniformLocation("projectionMatrix");
+    _normalMatrixUniform = uniformLocation("normalMatrix");
+}
+
+
+class DeviceDrawable: public SceneGraph::Drawable3D {
+    public:
+        explicit DeviceDrawable(UnsignedByte id, Object3D& object, PhongIdShader& shader, const Color3& color, GL::Mesh& mesh, const Matrix4& primitiveTransformation, SceneGraph::DrawableGroup3D& drawables):
             SceneGraph::Drawable3D{object, &drawables},
+            _id{id},
+            _selected{false},
+            _color{color},
             _shader(shader),
             _mesh(mesh),
             _primitiveTransformation{primitiveTransformation} {}
+
+        void setSelected(bool selected) { _selected = selected; }
 
     private:
         void draw(const Matrix4& transformation, SceneGraph::Camera3D& camera) override {
             _shader.setTransformationMatrix(transformation*_primitiveTransformation)
                    .setNormalMatrix(transformation.rotationScaling())
-                   .setProjectionMatrix(camera.projectionMatrix());
+                   .setProjectionMatrix(camera.projectionMatrix())
+                   .setAmbientColor(_selected ? _color*0.3f : Color3{})
+                   .setColor(_color*(_selected ? 2.0f : 1.0f))
+                   /* relative to the camera */
+                   .setLightPosition({13.0f, 2.0f, 5.0f})
+                   .setObjectId(_id);
             _mesh.draw(_shader);
         }
 
-        Shaders::Phong& _shader;
+
+        UnsignedByte _id;
+        bool _selected;
+        Color3 _color;
+        PhongIdShader& _shader;
         GL::Mesh& _mesh;
         Matrix4 _primitiveTransformation;
 };
@@ -115,6 +219,7 @@ class RingDrawable: public SceneGraph::Drawable3D {
         Shaders::MeshVisualizer _shader;
 };
 
+
 class PacketLineDrawable: public SceneGraph::Drawable3D {
     public:
         explicit PacketLineDrawable(Object3D& object, Shaders::Flat3D& shader, Vector3& a, Vector3& b, SceneGraph::DrawableGroup3D& group):
@@ -134,6 +239,7 @@ class PacketLineDrawable: public SceneGraph::Drawable3D {
         GL::Mesh _mesh;
         Shaders::Flat3D& _shader;
 };
+
 
 class ObjSelect: public Platform::Application {
     public:
@@ -157,7 +263,6 @@ class ObjSelect: public Platform::Application {
         void createLine(Vector2, Vector2);
 
     private:
-
         // UI fields
         ImGuiIntegration::Context _imgui{NoCreate};
 
@@ -178,22 +283,41 @@ class ObjSelect: public Platform::Application {
         Timeline _timeline;
 
         Object3D *_cameraRig, *_cameraObject;
-        Vector2i _previousMousePosition;
+
+        GL::Framebuffer _framebuffer;
+        Vector2i _previousMousePosition, _mousePressPosition;
         Color3 _color;
+        GL::Renderbuffer _colorBuf, _objectId, _depth;
+
+
+        std::vector<DeviceDrawable> *_device_objects{};
 
         bool _drawCubes{true};
 };
 
 
 ObjSelect::ObjSelect(const Arguments& arguments): Platform::Application(arguments,
-            Configuration{}.setTitle("Monopticon").setWindowFlags(Configuration::WindowFlag::Borderless).setSize(Vector2i{1200,800}),
-            GLConfiguration{}.setSampleCount(16)) {
+            Configuration{}.setTitle("Monopticon").setWindowFlags(Configuration::WindowFlag::Borderless)) {
     {
     std::cout << "Waiting for broker connection" << std::endl;
 
     ep.listen("127.0.0.1", 9999);
 
     std::cout << "Connection received" << std::endl;
+
+    /* Global renderer configuration */
+    GL::Renderer::enable(GL::Renderer::Feature::DepthTest);
+
+    /* Configure framebuffer (using R8UI for object ID which means 255 objects max) */
+    _colorBuf.setStorage(GL::RenderbufferFormat::RGBA8, GL::defaultFramebuffer.viewport().size());
+    _objectId.setStorage(GL::RenderbufferFormat::R8UI, GL::defaultFramebuffer.viewport().size());
+    _depth.setStorage(GL::RenderbufferFormat::DepthComponent24, GL::defaultFramebuffer.viewport().size());
+    _framebuffer.attachRenderbuffer(GL::Framebuffer::ColorAttachment{0}, _colorBuf)
+                .attachRenderbuffer(GL::Framebuffer::ColorAttachment{1}, _objectId)
+                .attachRenderbuffer(GL::Framebuffer::BufferAttachment::Depth, _depth)
+                .mapForDraw({{PhongIdShader::ColorOutput, GL::Framebuffer::ColorAttachment{0}},
+                            {PhongIdShader::ObjectIdOutput, GL::Framebuffer::ColorAttachment{1}}});
+    CORRADE_INTERNAL_ASSERT(_framebuffer.checkStatus(GL::FramebufferTarget::Draw) == GL::Framebuffer::Status::Complete);
 
     /* Camera setup */
     (*(_cameraRig = new Object3D{&_scene}))
@@ -208,11 +332,6 @@ ObjSelect::ObjSelect(const Arguments& arguments): Platform::Application(argument
         .setViewport(GL::defaultFramebuffer.viewport().size()); /* Drawing setup */
 
     _box = MeshTools::compile(Primitives::uvSphereSolid(8.0f, 30.0f));
-    _shader = Shaders::Phong{};
-    _shader.setAmbientColor(0x111111_rgbf)
-           .setSpecularColor(0x330000_rgbf)
-           .setDiffuseColor(_pickColor)
-           .setLightPosition({10.0f, 15.0f, 5.0f});
 
     _line_shader = Shaders::Flat3D{};
     _line_shader.setColor(0x00ffff_rgbf);
@@ -258,6 +377,7 @@ ObjSelect::ObjSelect(const Arguments& arguments): Platform::Application(argument
     }
 }
 
+
 void ObjSelect::parse_raw_packet(broker::bro::Event event) {
     broker::vector parent_content = event.args();
 
@@ -291,7 +411,6 @@ void ObjSelect::parse_raw_packet(broker::bro::Event event) {
         d_s = &(search->second);
         p1 = d_s->CircPoint;
         d_s->num_pkts_sent += 1;
-
     }
 
     Vector2 p2;
@@ -312,7 +431,8 @@ Vector2 ObjSelect::createCircle() {
     Vector2 v = 10.0f*randCirclePoint();
     o->translate({v.x(), 0.0f, v.y()});
 
-    new ColoredDrawable{*o, _shader, _box,
+    UnsignedByte id = (UnsignedByte)_device_objects.size();
+    new DeviceDrawable{ *o, _shader, _box,
         Matrix4::scaling(Vector3{0.25f}), _drawables};
     return v;
 }
@@ -378,6 +498,7 @@ void ObjSelect::drawEvent() {
     redraw();
 }
 
+
 void ObjSelect::viewportEvent(ViewportEvent& event) {
     GL::defaultFramebuffer.setViewport({{}, event.framebufferSize()});
 
@@ -385,8 +506,11 @@ void ObjSelect::viewportEvent(ViewportEvent& event) {
         event.windowSize(), event.framebufferSize());
 }
 
+
 void ObjSelect::keyPressEvent(KeyEvent& event) {
     if(_imgui.handleKeyPressEvent(event)) return;
+
+
 
     /* Movement */
     if(event.key() == KeyEvent::Key::Down) {
@@ -400,9 +524,11 @@ void ObjSelect::keyPressEvent(KeyEvent& event) {
     }
 }
 
+
 void ObjSelect::keyReleaseEvent(KeyEvent& event) {
     if(_imgui.handleKeyReleaseEvent(event)) return;
 }
+
 
 void ObjSelect::mousePressEvent(MouseEvent& event) {
     if(_imgui.handleMousePressEvent(event)) return;
@@ -415,7 +541,24 @@ void ObjSelect::mousePressEvent(MouseEvent& event) {
 
 void ObjSelect::mouseReleaseEvent(MouseEvent& event) {
     if(_imgui.handleMouseReleaseEvent(event)) return;
+
+    /* Read object ID at given click position (framebuffer has Y up while windowing system Y down) */
+    _framebuffer.mapForRead(GL::Framebuffer::ColorAttachment{1});
+    Image2D data = _framebuffer.read(
+        Range2Di::fromSize({event.position().x(), _framebuffer.viewport().sizeY() - event.position().y() - 1}, {1, 1}),
+        {PixelFormat::R8UI});
+
+    /* Highlight object under mouse and deselect all other */
+    for(DeviceDrawable o : _device_objects) o->setSelected(false);
+    UnsignedByte id = data.data<UnsignedByte>()[0];
+    if(id > 0 && id < _device_objects->size()) {
+        _device_objects->back().setSelected(true);
+    }
+
+    event.setAccepted();
+    redraw();
 }
+
 
 void ObjSelect::mouseMoveEvent(MouseMoveEvent& event) {
     if(_imgui.handleMouseMoveEvent(event)) return;
@@ -435,6 +578,7 @@ void ObjSelect::mouseMoveEvent(MouseMoveEvent& event) {
     redraw();
 }
 
+
 void ObjSelect::mouseScrollEvent(MouseScrollEvent& event) {
     if(_imgui.handleMouseScrollEvent(event)) return;
 
@@ -450,9 +594,11 @@ void ObjSelect::mouseScrollEvent(MouseScrollEvent& event) {
     redraw();
 }
 
+
 void ObjSelect::textInputEvent(TextInputEvent& event) {
     if(_imgui.handleTextInputEvent(event)) return;
 }
+
 
 Vector2 randCirclePoint() {
     float f =  rand() / (RAND_MAX/(2*Math::Constants<float>::pi()));
