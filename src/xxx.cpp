@@ -183,7 +183,6 @@ class DeviceDrawable: public SceneGraph::Drawable3D {
             _mesh.draw(_shader);
         }
 
-
         UnsignedByte _id;
         bool _selected;
         Color3 _color;
@@ -214,30 +213,94 @@ class RingDrawable: public SceneGraph::Drawable3D {
             _mesh.draw(_shader);
         }
 
+        Matrix4 scaling = Matrix4::scaling(Vector3{10});
+
         GL::Mesh _mesh;
         Color4 _color;
         Shaders::MeshVisualizer _shader;
 };
 
 
+class ParaLineShader: public GL::AbstractShaderProgram {
+    public:
+        typedef GL::Attribute<0, Vector3> Position;
+
+        explicit ParaLineShader();
+
+        ParaLineShader& setColor(const Color3& color) {
+            setUniform(_colorUniform, color);
+            return *this;
+        }
+
+        ParaLineShader& setBPos(const Vector3& position) {
+            setUniform(_bPosUniform, position);
+            return *this;
+        }
+
+        ParaLineShader& setTParam(const float t) {
+            setUniform(_tParamUniform, t);
+            return *this;
+        }
+
+        ParaLineShader& setTransformationProjectionMatrix(const Matrix4& matrix) {
+            setUniform(_transformationProjectionMatrixUniform, matrix);
+            return *this;
+        }
+
+    private:
+        Int _colorUniform,
+            _bPosUniform,
+            _tParamUniform,
+            _transformationProjectionMatrixUniform;
+
+};
+
+ParaLineShader::ParaLineShader() {
+    Utility::Resource rs("picking-data");
+
+    GL::Shader vert{GL::Version::GL330, GL::Shader::Type::Vertex},
+        frag{GL::Version::GL330, GL::Shader::Type::Fragment};
+    vert.addSource(rs.get("packetline.vs"));
+    frag.addSource(rs.get("packetline.fs"));
+    CORRADE_INTERNAL_ASSERT(GL::Shader::compile({vert, frag}));
+    attachShaders({vert, frag});
+    CORRADE_INTERNAL_ASSERT(link());
+
+    //_bPosUniform = uniformLocation("bPos");
+    //_tParamUniform = uniformLocation("tParam");
+    //_transformationProjectionMatrixUniform = uniformLocation("transformationProjectionMatrix");
+
+    //CORRADE_INTERNAL_ASSERT(_bPosUniform >= 0);
+}
+
+
 class PacketLineDrawable: public SceneGraph::Drawable3D {
     public:
-        explicit PacketLineDrawable(Object3D& object, Shaders::Flat3D& shader, Vector3& a, Vector3& b, SceneGraph::DrawableGroup3D& group):
+        explicit PacketLineDrawable(Object3D& object, ParaLineShader& shader, Vector3& a, Vector3& b, SceneGraph::DrawableGroup3D& group):
             SceneGraph::Drawable3D{object, &group},
-            _shader{shader}
+            _object{object},
+            _shader{shader},
+            _b{b}
         {
-
+            _t = 0.0f;
             _mesh = MeshTools::compile(Primitives::line3D(a,b));
         }
 
     private:
         void draw(const Matrix4& transformationMatrix, SceneGraph::Camera3D& camera) override {
-            _shader.setTransformationProjectionMatrix(camera.projectionMatrix()*transformationMatrix);
+            if (_t < 1.0f) _t += 0.001;
+
+            _shader.setTransformationProjectionMatrix(camera.projectionMatrix()*transformationMatrix)
+                   .setBPos(_b)
+                   .setTParam(_t);
             _mesh.draw(_shader);
         }
 
         GL::Mesh _mesh;
-        Shaders::Flat3D& _shader;
+        Object3D &_object;
+        ParaLineShader& _shader;
+        Vector3 _b;
+        float _t;
 };
 
 
@@ -273,7 +336,7 @@ class ObjSelect: public Platform::Application {
         GL::Buffer _indexBuffer, _vertexBuffer;
         PhongIdShader _phong_id_shader;
 
-        Shaders::Flat3D _line_shader;
+        ParaLineShader _line_shader;
 
         Scene3D _scene;
         SceneGraph::Camera3D* _camera;
@@ -344,7 +407,7 @@ ObjSelect::ObjSelect(const Arguments& arguments):
             .setIndexBuffer(_sphereIndices, 0, MeshIndexType::UnsignedShort);
     }
 
-    _line_shader = Shaders::Flat3D{};
+    _line_shader = ParaLineShader{};
     _line_shader.setColor(0x00ffff_rgbf);
     _phong_id_shader = PhongIdShader{};
 
@@ -376,6 +439,7 @@ ObjSelect::ObjSelect(const Arguments& arguments):
     d_s = new DeviceStats{mac_dst, p2, 0, 1};
     device_map.insert(std::make_pair(mac_dst, *d_s));
 
+    createLine(p1, p2);
 
     GL::Renderer::enable(GL::Renderer::Feature::DepthTest);
     GL::Renderer::enable(GL::Renderer::Feature::FaceCulling);
