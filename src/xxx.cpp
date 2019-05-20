@@ -141,8 +141,8 @@ PhongIdShader::PhongIdShader() {
 
     GL::Shader vert{GL::Version::GL330, GL::Shader::Type::Vertex},
         frag{GL::Version::GL330, GL::Shader::Type::Fragment};
-    vert.addSource(rs.get("PhongId.vert"));
-    frag.addSource(rs.get("PhongId.frag"));
+    vert.addSource(rs.get("phongid.vs"));
+    frag.addSource(rs.get("phongid.fs"));
     CORRADE_INTERNAL_ASSERT(GL::Shader::compile({vert, frag}));
     attachShaders({vert, frag});
     CORRADE_INTERNAL_ASSERT(link());
@@ -159,7 +159,7 @@ PhongIdShader::PhongIdShader() {
 
 class DeviceDrawable: public SceneGraph::Drawable3D {
     public:
-        explicit DeviceDrawable(UnsignedByte id, Object3D& object, PhongIdShader& shader, Color3& color, GL::Mesh& mesh, const Matrix4& primitiveTransformation, SceneGraph::DrawableGroup3D& drawables):
+        explicit DeviceDrawable(UnsignedByte id, Object3D& object, PhongIdShader& shader, Color3 &color, GL::Mesh& mesh, const Matrix4& primitiveTransformation, SceneGraph::DrawableGroup3D& drawables):
             SceneGraph::Drawable3D{object, &drawables},
             _id{id},
             _selected{false},
@@ -175,10 +175,10 @@ class DeviceDrawable: public SceneGraph::Drawable3D {
             _shader.setTransformationMatrix(transformation*_primitiveTransformation)
                    .setNormalMatrix(transformation.rotationScaling())
                    .setProjectionMatrix(camera.projectionMatrix())
-                   .setAmbientColor(_selected ? _color*0.9f : Color3{})
-                   .setColor(_color*(_selected ? 2.0f : 1.7f))
+                   .setAmbientColor(_selected ? _color*0.3f : Color3{})
+                   .setColor(_color*(_selected ? 2.0f : 1.0f))
                    /* relative to the camera */
-                   .setLightPosition({0.0f, 5.0f, 2.0f})
+                   .setLightPosition({0.0f, -3.0f, -30.0f})
                    .setObjectId(_id);
             _mesh.draw(_shader);
         }
@@ -255,7 +255,6 @@ class ObjSelect: public Platform::Application {
         void mousePressEvent(MouseEvent& event) override;
         void mouseReleaseEvent(MouseEvent& event) override;
         void mouseMoveEvent(MouseMoveEvent& event) override;
-        void mouseScrollEvent(MouseScrollEvent& event) override;
         void textInputEvent(TextInputEvent& event) override;
 
         void parse_raw_packet(broker::bro::Event event);
@@ -267,13 +266,12 @@ class ObjSelect: public Platform::Application {
         ImGuiIntegration::Context _imgui{NoCreate};
 
         // Graphic fields
-        GL::Mesh _box{NoCreate}, _circle{NoCreate};
+        GL::Mesh _sphere, _circle{NoCreate};
         Color4 _clearColor = 0x002b36_rgbf;
-        Color4 _pickColor = 0xffffff_rgbf;
+        Color3 _pickColor = 0xffffff_rgbf;
 
         GL::Buffer _indexBuffer, _vertexBuffer;
-        GL::Mesh _mesh;
-        PhongIdShader _shader;
+        PhongIdShader _phong_id_shader;
 
         Shaders::Flat3D _line_shader;
 
@@ -286,9 +284,9 @@ class ObjSelect: public Platform::Application {
 
         GL::Framebuffer _framebuffer;
         Vector2i _previousMousePosition, _mousePressPosition;
-        Color3 _color;
-        GL::Renderbuffer _colorBuf, _objectId, _depth;
+        GL::Renderbuffer _color, _objectId, _depth;
 
+        GL::Buffer _sphereVertices, _sphereIndices;
 
         std::vector<DeviceDrawable*> _device_objects{};
 
@@ -301,7 +299,7 @@ ObjSelect::ObjSelect(const Arguments& arguments):
             .setTitle("Monopticon")
             .setWindowFlags(Configuration::WindowFlag::Borderless|Configuration::WindowFlag::Resizable)
             .setSize(Vector2i{1200,800}),
-            GLConfiguration{}.setSampleCount(16)},
+            GLConfiguration{}.setSampleCount(8)},
         _framebuffer{GL::defaultFramebuffer.viewport()}
 {
     std::cout << "Waiting for broker connection" << std::endl;
@@ -313,11 +311,10 @@ ObjSelect::ObjSelect(const Arguments& arguments):
     /* Global renderer configuration */
     GL::Renderer::enable(GL::Renderer::Feature::DepthTest);
 
-    /* Configure framebuffer (using R8UI for object ID which means 255 objects max) */
-    _colorBuf.setStorage(GL::RenderbufferFormat::RGBA8, GL::defaultFramebuffer.viewport().size());
-    _objectId.setStorage(GL::RenderbufferFormat::R8UI, GL::defaultFramebuffer.viewport().size());
+    _color.setStorage(GL::RenderbufferFormat::RGBA8, GL::defaultFramebuffer.viewport().size());
+    _objectId.setStorage(GL::RenderbufferFormat::R32UI, GL::defaultFramebuffer.viewport().size());
     _depth.setStorage(GL::RenderbufferFormat::DepthComponent24, GL::defaultFramebuffer.viewport().size());
-    _framebuffer.attachRenderbuffer(GL::Framebuffer::ColorAttachment{0}, _colorBuf)
+    _framebuffer.attachRenderbuffer(GL::Framebuffer::ColorAttachment{0}, _color)
                 .attachRenderbuffer(GL::Framebuffer::ColorAttachment{1}, _objectId)
                 .attachRenderbuffer(GL::Framebuffer::BufferAttachment::Depth, _depth)
                 .mapForDraw({{PhongIdShader::ColorOutput, GL::Framebuffer::ColorAttachment{0}},
@@ -326,39 +323,59 @@ ObjSelect::ObjSelect(const Arguments& arguments):
 
     /* Camera setup */
     (*(_cameraRig = new Object3D{&_scene}))
-        .translate(Vector3::yAxis(3.0f))
+        //.translate(Vector3::yAxis(3.0f))
         .rotateY(40.0_degf);
     (*(_cameraObject = new Object3D{_cameraRig}))
         .translate(Vector3::zAxis(30.0f))
         .rotateX(-25.0_degf);
     (_camera = new SceneGraph::Camera3D(*_cameraObject))
         ->setAspectRatioPolicy(SceneGraph::AspectRatioPolicy::Extend)
-        .setProjectionMatrix(Matrix4::perspectiveProjection(25.0_degf, 1.0f, 0.001f, 100.0f))
+        .setProjectionMatrix(Matrix4::perspectiveProjection(40.0_degf, 1.0f, 0.001f, 100.0f))
         .setViewport(GL::defaultFramebuffer.viewport().size()); /* Drawing setup */
 
-    _box = MeshTools::compile(Primitives::uvSphereSolid(8.0f, 30.0f));
+
+    {
+        Trade::MeshData3D data = Primitives::uvSphereSolid(8.0f, 30.0f);
+        _sphereVertices.setData(MeshTools::interleave(data.positions(0), data.normals(0)), GL::BufferUsage::StaticDraw);
+        _sphereIndices.setData(MeshTools::compressIndicesAs<UnsignedShort>(data.indices()), GL::BufferUsage::StaticDraw);
+        _sphere.setCount(data.indices().size())
+            .setPrimitive(data.primitive())
+            .addVertexBuffer(_sphereVertices, 0, PhongIdShader::Position{}, PhongIdShader::Normal{})
+            .setIndexBuffer(_sphereIndices, 0, MeshIndexType::UnsignedShort);
+    }
 
     _line_shader = Shaders::Flat3D{};
     _line_shader.setColor(0x00ffff_rgbf);
-    _shader = PhongIdShader{};
+    _phong_id_shader = PhongIdShader{};
 
     srand(time(NULL));
 
     Object3D *cow = new Object3D{&_scene};
-    Matrix4 scaling = Matrix4::scaling(Vector3{100});
+    Matrix4 scaling = Matrix4::scaling(Vector3{10});
     cow->transform(scaling);
     cow->rotateX(60.0_degf);
-    new RingDrawable{*cow, 0x0000ff_rgbf,_drawables};
+    new RingDrawable{*cow, 0x0000ff_rgbf, _drawables};
 
     Object3D *cor = new Object3D{&_scene};
     cor->rotateX(90.0_degf);
     cor->transform(scaling);
-    new RingDrawable{*cor, 0xff000088_rgbaf,_drawables};
+    new RingDrawable{*cor, 0xff000088_rgbaf, _drawables};
 
     Object3D *cog = new Object3D{&_scene};
     cog->rotateX(-60.0_degf);
     cog->transform(scaling);
-    new RingDrawable{*cog, 0x00ff0088_rgbaf,_drawables};
+    new RingDrawable{*cog, 0x00ff0088_rgbaf, _drawables};
+
+    Vector2 p1 = createCircle();
+    std::string mac_dst = "ba:dd:be:ee:ef";
+    DeviceStats *d_s = new DeviceStats{mac_dst, p1, 0, 1};
+    device_map.insert(std::make_pair(mac_dst, *d_s));
+
+    Vector2 p2 = createCircle();
+    mac_dst = "ca:ff:eb:ee:ef";
+    d_s = new DeviceStats{mac_dst, p2, 0, 1};
+    device_map.insert(std::make_pair(mac_dst, *d_s));
+
 
     GL::Renderer::enable(GL::Renderer::Feature::DepthTest);
     GL::Renderer::enable(GL::Renderer::Feature::FaceCulling);
@@ -375,17 +392,6 @@ ObjSelect::ObjSelect(const Arguments& arguments):
 
     GL::Renderer::enable(GL::Renderer::Feature::DepthTest);
     GL::Renderer::enable(GL::Renderer::Feature::FaceCulling);
-
-    Vector2 p1 = createCircle();
-    std::string mac_dst = "ba:dd:be:ee:ef";
-    DeviceStats *d_s = new DeviceStats{mac_dst, p1, 0, 1};
-    device_map.insert(std::make_pair(mac_dst, *d_s));
-
-    Vector2 p2 = createCircle();
-    mac_dst = "ca:ff:eb:ee:ef";
-    d_s = new DeviceStats{mac_dst, p2, 0, 1};
-    device_map.insert(std::make_pair(mac_dst, *d_s));
-
 
     setSwapInterval(1);
     setMinimalLoopPeriod(16);
@@ -444,14 +450,13 @@ void ObjSelect::parse_raw_packet(broker::bro::Event event) {
 Vector2 ObjSelect::createCircle() {
     Object3D* o = new Object3D{&_scene};
 
-
     Vector2 v = 10.0f*randCirclePoint();
     o->translate({v.x(), 0.0f, v.y()});
 
-    Color3 c = 0x2f83cc_rgbf;
-    UnsignedByte id = static_cast<UnsignedByte>(_device_objects.size());
+    Color3 c = 0xa5c9ea_rgbf;
+    UnsignedByte id = static_cast<UnsignedByte>(_device_objects.size()+1);
 
-    DeviceDrawable *d = new DeviceDrawable{id, *o, _shader, c, _box,
+    DeviceDrawable *d = new DeviceDrawable{id, *o, _phong_id_shader, c, _sphere,
         Matrix4::scaling(Vector3{0.25f}), _drawables};
 
     _device_objects.push_back(d);
@@ -480,22 +485,18 @@ void ObjSelect::drawEvent() {
             std::cout << "Unhandled Event: " << event.name() << std::endl;
         }
     }
-
     // Actually draw things
+
+    /* Rotate the camera on an orbit */
+    //_cameraRig->rotateY(0.10_degf);
 
     /* Draw to custom framebuffer */
     _framebuffer
-        .clearColor(0, Color3{0.125f})
+        .clearColor(0, _clearColor)
         .clearColor(1, Vector4ui{})
         .clearDepth(1.0f)
         .bind();
     _camera->draw(_drawables);
-
-
-    /* Draw all the things */
-    if(_drawCubes) _camera->draw(_drawables);
-
-
 
 
     /* Bind the main buffer back */
@@ -509,17 +510,13 @@ void ObjSelect::drawEvent() {
     GL::AbstractFramebuffer::blit(_framebuffer, GL::defaultFramebuffer,
         {{}, _framebuffer.viewport().size()}, GL::FramebufferBlit::Color);
 
-    /* Rotate the camera on an orbit */
-    //_cameraObject->rotateY(0.10_degf);
-
     _imgui.newFrame();
 
     ImGui::SetNextWindowSize(ImVec2(300, 40), ImGuiSetCond_FirstUseEver);
     ImGui::Begin("Heads Up Display");
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)",
         1000.0/Double(ImGui::GetIO().Framerate), Double(ImGui::GetIO().Framerate));
-    //if(ImGui::ColorEdit3("Pick Item Color", _pickColor.data()))
-        //_shader.setDiffuseColor(&_pickColor);
+
     if(ImGui::ColorEdit3("Pick Background Color", _clearColor.data()))
         GL::Renderer::setClearColor(_clearColor);
     ImGui::End();
@@ -552,8 +549,6 @@ void ObjSelect::viewportEvent(ViewportEvent& event) {
 
 void ObjSelect::keyPressEvent(KeyEvent& event) {
     if(_imgui.handleKeyPressEvent(event)) return;
-
-
 
     /* Movement */
     if(event.key() == KeyEvent::Key::Down) {
@@ -592,19 +587,16 @@ void ObjSelect::mouseReleaseEvent(MouseEvent& event) {
     _framebuffer.mapForRead(GL::Framebuffer::ColorAttachment{1});
     Image2D data = _framebuffer.read(
         Range2Di::fromSize({event.position().x(), _framebuffer.viewport().sizeY() - event.position().y() - 1}, {1, 1}),
-        {PixelFormat::R8UI});
+        {PixelFormat::R32UI});
 
-    /* Highlight object under mouse and deselect all other ...
-     * TODO check functionality */
+    /* Highlight object under mouse and deselect all other */
     for(std::vector<DeviceDrawable*>::iterator it = _device_objects.begin(); it != _device_objects.end(); ++it) {
         (*it)->setSelected(false);
     }
 
     UnsignedByte id = data.data<UnsignedByte>()[0];
-    std::cout << "Printing id: " << id << std::endl;
-    printf("%d\n", id);
-    if(id > -1 && id < _device_objects.size()) {
-        _device_objects.at(id)->setSelected(true);
+    if(id > 0 && id < _device_objects.size()+1) {
+        _device_objects.at(id-1)->setSelected(true);
     }
 
     event.setAccepted();
@@ -627,22 +619,6 @@ void ObjSelect::mouseMoveEvent(MouseMoveEvent& event) {
 
     _previousMousePosition = event.position();
     event.setAccepted();
-    redraw();
-}
-
-
-void ObjSelect::mouseScrollEvent(MouseScrollEvent& event) {
-    if(_imgui.handleMouseScrollEvent(event)) return;
-
-    if(!event.offset().y()) return;
-
-    /* Distance to origin */
-    const Float distance = _cameraObject->transformation().translation().z();
-
-    /* Move 15% of the distance back or forward */
-    _cameraObject->translate(Vector3::zAxis(
-        distance*(1.0f - (event.offset().y() > 0 ? 1/0.85f : 0.85f))));
-
     redraw();
 }
 
