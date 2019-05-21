@@ -2,6 +2,7 @@
 #include <iostream>
 #include <math.h>
 #include <ctime>
+#include <set>
 
 #include <imgui.h>
 
@@ -250,10 +251,11 @@ class ParaLineShader: public GL::AbstractShaderProgram {
             return *this;
         }
 
+        /*
         ParaLineShader& setBPos(const Vector3& position) {
             setUniform(_bPosUniform, position);
             return *this;
-        }
+        }*/
 
         ParaLineShader& setTParam(const float t) {
             setUniform(_tParamUniform, t);
@@ -267,7 +269,7 @@ class ParaLineShader: public GL::AbstractShaderProgram {
 
     private:
         Int _colorUniform,
-            _bPosUniform,
+            //_bPosUniform,
             _tParamUniform,
             _transformationProjectionMatrixUniform;
 
@@ -285,8 +287,9 @@ ParaLineShader::ParaLineShader() {
     CORRADE_INTERNAL_ASSERT(link());
 
     //_bPosUniform = uniformLocation("bPos");
-    //_tParamUniform = uniformLocation("tParam");
-    //_transformationProjectionMatrixUniform = uniformLocation("transformationProjectionMatrix");
+    _colorUniform = uniformLocation("color");
+    _tParamUniform = uniformLocation("tParam");
+    _transformationProjectionMatrixUniform = uniformLocation("transformationProjectionMatrix");
 
     //CORRADE_INTERNAL_ASSERT(_bPosUniform >= 0);
 }
@@ -297,27 +300,36 @@ class PacketLineDrawable: public SceneGraph::Drawable3D {
         explicit PacketLineDrawable(Object3D& object, ParaLineShader& shader, Vector3& a, Vector3& b, SceneGraph::DrawableGroup3D& group):
             SceneGraph::Drawable3D{object, &group},
             _object{object},
-            _shader{shader},
-            _b{b}
+            _shader{shader}//,
+            //_b{b}
         {
-            _t = 0.0f;
+            _t = 1.0f;
             _mesh = MeshTools::compile(Primitives::line3D(a,b));
+            _expired = false;
         }
+
+    Object3D &_object;
+    bool _expired;
 
     private:
         void draw(const Matrix4& transformationMatrix, SceneGraph::Camera3D& camera) override {
-            if (_t < 1.0f) _t += 0.001;
+            if (_t < 1.001f && _t > 0.0f) {
+                _t -= 0.02f;
+            }
+            if (_t < 0.0f) {
+                _expired=true;
+                return;
+            }
 
             _shader.setTransformationProjectionMatrix(camera.projectionMatrix()*transformationMatrix)
-                   .setBPos(_b)
+                   //.setBPos(_b)
                    .setTParam(_t);
             _mesh.draw(_shader);
         }
 
         GL::Mesh _mesh;
-        Object3D &_object;
         ParaLineShader& _shader;
-        Vector3 _b;
+        //Vector3 _b;
         float _t;
 };
 
@@ -370,6 +382,7 @@ class ObjSelect: public Platform::Application {
         GL::Buffer _sphereVertices, _sphereIndices;
 
         std::vector<DeviceDrawable*> _device_objects{};
+        std::set<PacketLineDrawable*> _packet_line_queue{};
 
         bool _drawCubes{true};
 };
@@ -552,7 +565,8 @@ void ObjSelect::createLine(Vector2 a, Vector2 b) {
         Vector3 a3 = Vector3{a.x(), 0.0f, a.y()};
         Vector3 b3 = Vector3{b.x(), 0.0f, b.y()};
 
-        new PacketLineDrawable{*line, _line_shader, a3, b3, _drawables};
+        auto *pl = new PacketLineDrawable{*line, _line_shader, a3, b3, _drawables};
+        _packet_line_queue.insert(pl);
 }
 
 
@@ -567,6 +581,19 @@ void ObjSelect::drawEvent() {
             std::cout << "Unhandled Event: " << event.name() << std::endl;
         }
     }
+
+    // TODO cleanup objects:
+    std::set<PacketLineDrawable *>::iterator it;
+    for (it = _packet_line_queue.begin(); it != _packet_line_queue.end(); ) {
+        PacketLineDrawable *pl = *it;
+        if (pl->_expired) {
+            it = _packet_line_queue.erase(it);
+            delete pl;
+        } else {
+            ++it;
+        }
+    }
+
     // Actually draw things
 
     /* Rotate the camera on an orbit */
