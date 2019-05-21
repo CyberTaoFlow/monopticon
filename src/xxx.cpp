@@ -111,6 +111,11 @@ class PhongIdShader: public GL::AbstractShaderProgram {
             return *this;
         }
 
+        PhongIdShader& setTimeIntensity(const float t) {
+            setUniform(_timeIntensityUniform, t);
+            return *this;
+        }
+
         PhongIdShader& setTransformationMatrix(const Matrix4& matrix) {
             setUniform(_transformationMatrixUniform, matrix);
             return *this;
@@ -131,6 +136,7 @@ class PhongIdShader: public GL::AbstractShaderProgram {
             _lightPositionUniform,
             _ambientColorUniform,
             _colorUniform,
+            _timeIntensityUniform,
             _transformationMatrixUniform,
             _normalMatrixUniform,
             _projectionMatrixUniform;
@@ -151,6 +157,7 @@ PhongIdShader::PhongIdShader() {
     _lightPositionUniform = uniformLocation("light");
     _ambientColorUniform = uniformLocation("ambientColor");
     _colorUniform = uniformLocation("color");
+    _timeIntensityUniform = uniformLocation("timeIntensity");
     _transformationMatrixUniform = uniformLocation("transformationMatrix");
     _projectionMatrixUniform = uniformLocation("projectionMatrix");
     _normalMatrixUniform = uniformLocation("normalMatrix");
@@ -166,17 +173,27 @@ class DeviceDrawable: public SceneGraph::Drawable3D {
             _color{color},
             _shader(shader),
             _mesh(mesh),
-            _primitiveTransformation{primitiveTransformation} {}
+            _primitiveTransformation{primitiveTransformation} {
+              _t = 0.0f;
+            }
 
-        void setSelected(bool selected) { _selected = selected; }
+        void setSelected(bool selected) {
+            _selected = selected;
+            if (selected) _t = 1.0f;
+        }
 
     private:
         void draw(const Matrix4& transformation, SceneGraph::Camera3D& camera) override {
+            if (_t > 0.0f) {
+                _t = _t - 0.01f;
+            }
+
             _shader.setTransformationMatrix(transformation*_primitiveTransformation)
                    .setNormalMatrix(transformation.rotationScaling())
                    .setProjectionMatrix(camera.projectionMatrix())
                    .setAmbientColor(_selected ? _color*0.3f : Color3{})
                    .setColor(_color*(_selected ? 2.0f : 1.0f))
+                   .setTimeIntensity(_t)
                    /* relative to the camera */
                    .setLightPosition({0.0f, -3.0f, -30.0f})
                    .setObjectId(_id);
@@ -189,6 +206,7 @@ class DeviceDrawable: public SceneGraph::Drawable3D {
         PhongIdShader& _shader;
         GL::Mesh& _mesh;
         Matrix4 _primitiveTransformation;
+        float _t;
 };
 
 

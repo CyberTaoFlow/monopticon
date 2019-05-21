@@ -1,5 +1,6 @@
 uniform lowp vec3 ambientColor;
 uniform lowp vec3 color;
+uniform lowp float timeIntensity;
 uniform lowp uint objectId;
 
 in mediump vec3 transformedNormal;
@@ -14,11 +15,13 @@ void main() {
     highp vec3 normalizedLightDirection = normalize(lightDirection);
 
     /* Add ambient color */
-    fragmentColor.rgb = ambientColor;
+    lowp vec3 t = ambientColor * timeIntensity;
+    //lowp vec3 t = ambientColor;
+    fragmentColor.rgb = t;
 
     /* Add diffuse color */
     lowp float intensity = max(0.0, dot(normalizedTransformedNormal, normalizedLightDirection));
-    fragmentColor.rgb += color*intensity;
+    fragmentColor.rgb += color*(intensity);
 
     /* Add specular color, if needed */
     if(intensity > 0.001) {
