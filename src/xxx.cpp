@@ -70,14 +70,7 @@ typedef SceneGraph::Scene<SceneGraph::MatrixTransformation3D> Scene3D;
 
 Vector2 randCirclePoint();
 
-struct DeviceStats {
-  std::string mac_addr;
-  Vector2 CircPoint;
-  int num_pkts_sent;
-  int num_pkts_recv;
-};
-
-std::unordered_map<std::string, DeviceStats> device_map = {};
+class DeviceStats;
 
 
 class PhongIdShader: public GL::AbstractShaderProgram {
@@ -181,6 +174,10 @@ class DeviceDrawable: public SceneGraph::Drawable3D {
         void setSelected(bool selected) {
             _selected = selected;
             if (selected) _t = 1.0f;
+        }
+
+        bool isSelected() {
+            return _selected;
         }
 
     private:
@@ -334,6 +331,33 @@ class PacketLineDrawable: public SceneGraph::Drawable3D {
 };
 
 
+class DeviceStats {
+  public:
+     DeviceStats(std::string macAddr, Vector2 pos, DeviceDrawable *dev):
+         mac_addr{macAddr},
+         circPoint{pos},
+         _drawable{dev}
+     {};
+
+     std::string create_device_string() {
+         std::ostringstream stringStream;
+         stringStream << this->mac_addr;
+         stringStream << " | ";
+         stringStream << this->num_pkts_sent;
+         stringStream << " | ";
+         stringStream << this->num_pkts_recv;
+         std::string c = stringStream.str();
+         return c;
+     };
+
+     std::string mac_addr;
+     Vector2 circPoint;
+     int num_pkts_sent = 0;
+     int num_pkts_recv = 0;
+     DeviceDrawable *_drawable;
+};
+
+
 class ObjSelect: public Platform::Application {
     public:
         explicit ObjSelect(const Arguments& arguments);
@@ -351,7 +375,7 @@ class ObjSelect: public Platform::Application {
         void textInputEvent(TextInputEvent& event) override;
 
         void parse_raw_packet(broker::bro::Event event);
-        Vector2 createCircle();
+        DeviceStats* createCircle(const std::string);
         void createLine(Vector2, Vector2);
 
     private:
@@ -383,6 +407,7 @@ class ObjSelect: public Platform::Application {
 
         std::vector<DeviceDrawable*> _device_objects{};
         std::set<PacketLineDrawable*> _packet_line_queue{};
+        std::unordered_map<std::string, DeviceStats> _device_map{};
 
         bool _drawCubes{true};
 };
@@ -460,15 +485,17 @@ ObjSelect::ObjSelect(const Arguments& arguments):
     cog->transform(scaling);
     new RingDrawable{*cog, 0x00ff0088_rgbaf, _drawables};
 
-    Vector2 p1 = createCircle();
-    std::string mac_dst = "ba:dd:be:ee:ef";
-    DeviceStats *d_s = new DeviceStats{mac_dst, p1, 0, 1};
-    device_map.insert(std::make_pair(mac_dst, *d_s));
-
-    Vector2 p2 = createCircle();
-    mac_dst = "ca:ff:eb:ee:ef";
-    d_s = new DeviceStats{mac_dst, p2, 0, 1};
-    device_map.insert(std::make_pair(mac_dst, *d_s));
+    Vector2 p1, p2;
+    {
+        std::string mac_dst = "ba:dd:be:ee:ef";
+        DeviceStats *d_s = createCircle(mac_dst);
+        p1 = d_s->circPoint;
+    }
+    {
+        std::string mac_dst = "ca:ff:eb:ee:ef";
+        DeviceStats *d_s = createCircle(mac_dst);
+        p2 = d_s->circPoint;
+    }
 
     createLine(p1, p2);
 
@@ -510,53 +537,58 @@ void ObjSelect::parse_raw_packet(broker::bro::Event event) {
 
     std::string *mac_src = broker::get_if<std::string>(l2_pkt_hdr->at(3));
     if (mac_src == NULL) {
-        std::cout << "mac_src" << std::endl;
+        std::cout << "mac_src null" << std::endl;
         return;
     }
     std::string *mac_dst = broker::get_if<std::string>(l2_pkt_hdr->at(4));
+    if (mac_dst == NULL) {
+        std::cout << "mac_dst null" << std::endl;
+        return;
+    }
 
-    Vector2 p1;
     DeviceStats *d_s;
 
-    auto search = device_map.find(*mac_src);
-    if (search == device_map.end()) {
-        p1 = createCircle();
-        d_s = new DeviceStats{*mac_src, p1, 1, 0};
-        device_map.insert(std::make_pair(*mac_src, *d_s));
+    auto search = _device_map.find(*mac_src);
+    if (search == _device_map.end()) {
+        d_s = createCircle(*mac_src);
+        _device_map.insert(std::make_pair(*mac_src, *d_s));
     } else {
         d_s = &(search->second);
-        p1 = d_s->CircPoint;
-        d_s->num_pkts_sent += 1;
     }
+    d_s->num_pkts_sent += 1;
+    Vector2 p1 = d_s->circPoint;
 
-    Vector2 p2;
-    auto search_dst = device_map.find(*mac_dst);
-    if (search_dst == device_map.end()) {
-            p2 = createCircle();
-            d_s = new DeviceStats{*mac_dst, p2, 0, 1};
-            device_map.insert(std::make_pair(*mac_dst, *d_s));
+    auto search_dst = _device_map.find(*mac_dst);
+    if (search_dst == _device_map.end()) {
+        d_s = createCircle(*mac_dst);
     } else {
-        p2 = search_dst->second.CircPoint;
+        d_s = &(search_dst->second);
     }
+    d_s->num_pkts_recv += 1;
+    Vector2 p2 = d_s->circPoint;
+
     createLine(p1, p2);
 }
 
-
-Vector2 ObjSelect::createCircle() {
+DeviceStats* ObjSelect::createCircle(const std::string mac) {
     Object3D* o = new Object3D{&_scene};
 
     Vector2 v = 10.0f*randCirclePoint();
     o->translate({v.x(), 0.0f, v.y()});
 
-    Color3 c = 0xa5c9ea_rgbf;
     UnsignedByte id = static_cast<UnsignedByte>(_device_objects.size()+1);
 
-    DeviceDrawable *d = new DeviceDrawable{id, *o, _phong_id_shader, c, _sphere,
+    Color3 c = 0xa5c9ea_rgbf;
+    DeviceDrawable *dev = new DeviceDrawable{id, *o, _phong_id_shader, c, _sphere,
         Matrix4::scaling(Vector3{0.25f}), _drawables};
 
-    _device_objects.push_back(d);
+    _device_objects.push_back(dev);
 
-    return v;
+    DeviceStats* d_s = new DeviceStats{mac, v, dev};
+
+    _device_map.insert(std::make_pair(mac, *d_s));
+
+    return d_s;
 }
 
 
@@ -626,8 +658,22 @@ void ObjSelect::drawEvent() {
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)",
         1000.0/Double(ImGui::GetIO().Framerate), Double(ImGui::GetIO().Framerate));
 
+    // Import anontations
     if(ImGui::ColorEdit3("Pick Background Color", _clearColor.data()))
         GL::Renderer::setClearColor(_clearColor);
+
+    ImGui::TextColored(ImVec4(1,1,0,1), "Observed Devices");
+    ImGui::BeginChild("Scrolling");
+    for (auto it = _device_map.begin(); it != _device_map.end(); it++) {
+        DeviceStats *d_s = &(it->second);
+        std::string s = d_s->create_device_string();
+        if (d_s->_drawable->isSelected()) {
+            ImGui::TextColored(ImVec4(1,1,0,1), "%s", s.c_str());
+        } else {
+            ImGui::Text("%s", s.c_str());
+        }
+    }
+    ImGui::EndChild();
     ImGui::End();
 
     GL::Renderer::enable(GL::Renderer::Feature::Blending);
