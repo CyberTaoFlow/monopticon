@@ -189,11 +189,11 @@ class DeviceDrawable: public SceneGraph::Drawable3D {
             _shader.setTransformationMatrix(transformation*_primitiveTransformation)
                    .setNormalMatrix(transformation.rotationScaling())
                    .setProjectionMatrix(camera.projectionMatrix())
-                   .setAmbientColor(_selected ? _color*0.3f : Color3{})
-                   .setColor(_color*(_selected ? 2.0f : 1.0f))
+                   .setAmbientColor(_selected ? _color*0.2f : Color3{})
+                   .setColor(_color*(_selected ? 1.5f : 0.9f))
                    .setTimeIntensity(_t)
                    /* relative to the camera */
-                   .setLightPosition({0.0f, -3.0f, -30.0f})
+                   .setLightPosition({0.0f, 4.0f, 3.0f})
                    .setObjectId(_id);
             _mesh.draw(_shader);
         }
@@ -372,11 +372,13 @@ class ObjSelect: public Platform::Application {
         void mousePressEvent(MouseEvent& event) override;
         void mouseReleaseEvent(MouseEvent& event) override;
         void mouseMoveEvent(MouseMoveEvent& event) override;
+        void mouseScrollEvent(MouseScrollEvent& event) override;
         void textInputEvent(TextInputEvent& event) override;
 
         void parse_raw_packet(broker::bro::Event event);
         DeviceStats* createCircle(const std::string);
         void createLine(Vector2, Vector2);
+        void deselectAllDevices();
 
     private:
         // UI fields
@@ -570,6 +572,13 @@ void ObjSelect::parse_raw_packet(broker::bro::Event event) {
     createLine(p1, p2);
 }
 
+void ObjSelect::deselectAllDevices() {
+    /* Highlight object under mouse and deselect all other */
+    for(std::vector<DeviceDrawable*>::iterator it = _device_objects.begin(); it != _device_objects.end(); ++it) {
+        (*it)->setSelected(false);
+    }
+}
+
 DeviceStats* ObjSelect::createCircle(const std::string mac) {
     Object3D* o = new Object3D{&_scene};
 
@@ -653,24 +662,57 @@ void ObjSelect::drawEvent() {
 
     _imgui.newFrame();
 
-    ImGui::SetNextWindowSize(ImVec2(300, 40), ImGuiSetCond_FirstUseEver);
-    ImGui::Begin("Heads Up Display");
-    ImGui::Text("Application average %.3f ms/frame (%.1f FPS)",
+    ImGui::ShowDemoWindow();
+
+    ImGui::SetNextWindowSize(ImVec2(300, 210), ImGuiSetCond_Always);
+    ImGui::Begin("Tap Status");
+
+    if (ImGui::Button("Disconnect", ImVec2(80, 20))) {
+    }
+
+    const int len_v = 60;
+    static float values[len_v] = { 0 };
+    static int values_offset = 0;
+    static double refresh_time = 0.0;
+    if (refresh_time == 0.0)
+        refresh_time = ImGui::GetTime();
+    while (refresh_time < ImGui::GetTime()) // Create dummy data at fixed 60 hz rate for the demo
+    {
+        int x = 1 + std::rand()/((RAND_MAX + 1u)/2);
+        values[values_offset] = (float)x;
+        values_offset = (values_offset+1) % len_v;
+        refresh_time += 4.0f/60.0f;
+    }
+
+    ImGui::Separator();
+    char c[40];
+    ImGui::Text("App average %.3f ms/frame (%.1f FPS)",
         1000.0/Double(ImGui::GetIO().Framerate), Double(ImGui::GetIO().Framerate));
+    sprintf(c, "avg tx ppf %0.2f", 3.3453f);
+    ImGui::PlotLines("", values, len_v, values_offset, c, 0.0f, 4.0f, ImVec2(300,60));
+    sprintf(c, "avg rx ppf %0.2f", 4.34f);
+    ImGui::PlotLines("", values, len_v, values_offset, c, 0.0f, 4.0f, ImVec2(300,60));
+    ImGui::Separator();
+    ImGui::End();
 
-    // Import anontations
-    if(ImGui::ColorEdit3("Pick Background Color", _clearColor.data()))
-        GL::Renderer::setClearColor(_clearColor);
-
-    ImGui::TextColored(ImVec4(1,1,0,1), "Observed Devices");
+    ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiSetCond_Once);
+    ImGui::Begin("Heads Up Display");
+    ImGui::Text("Observed Addresses");
+    ImGui::Separator();
     ImGui::BeginChild("Scrolling");
     for (auto it = _device_map.begin(); it != _device_map.end(); it++) {
         DeviceStats *d_s = &(it->second);
         std::string s = d_s->create_device_string();
+
         if (d_s->_drawable->isSelected()) {
             ImGui::TextColored(ImVec4(1,1,0,1), "%s", s.c_str());
         } else {
             ImGui::Text("%s", s.c_str());
+        }
+        ImVec2 dimensions = ImVec2(300,20);
+        if (ImGui::Button("xxx", dimensions)) {
+            deselectAllDevices();
+            d_s->_drawable->setSelected(true);
         }
     }
     ImGui::EndChild();
@@ -744,10 +786,8 @@ void ObjSelect::mouseReleaseEvent(MouseEvent& event) {
         Range2Di::fromSize({event.position().x(), _framebuffer.viewport().sizeY() - event.position().y() - 1}, {1, 1}),
         {PixelFormat::R32UI});
 
-    /* Highlight object under mouse and deselect all other */
-    for(std::vector<DeviceDrawable*>::iterator it = _device_objects.begin(); it != _device_objects.end(); ++it) {
-        (*it)->setSelected(false);
-    }
+
+    deselectAllDevices();
 
     UnsignedByte id = data.data<UnsignedByte>()[0];
     if(id > 0 && id < _device_objects.size()+1) {
@@ -777,6 +817,9 @@ void ObjSelect::mouseMoveEvent(MouseMoveEvent& event) {
     redraw();
 }
 
+void ObjSelect::mouseScrollEvent(MouseScrollEvent& event) {
+    if(_imgui.handleMouseScrollEvent(event)) return;
+}
 
 void ObjSelect::textInputEvent(TextInputEvent& event) {
     if(_imgui.handleTextInputEvent(event)) return;
