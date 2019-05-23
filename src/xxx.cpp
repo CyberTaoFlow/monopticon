@@ -69,6 +69,7 @@ typedef SceneGraph::Object<SceneGraph::MatrixTransformation3D> Object3D;
 typedef SceneGraph::Scene<SceneGraph::MatrixTransformation3D> Scene3D;
 
 Vector2 randCirclePoint();
+Vector2 randOffset(float z);
 
 class DeviceStats;
 
@@ -471,21 +472,39 @@ ObjSelect::ObjSelect(const Arguments& arguments):
 
     srand(time(NULL));
 
-    Object3D *cow = new Object3D{&_scene};
-    Matrix4 scaling = Matrix4::scaling(Vector3{10});
-    cow->transform(scaling);
-    cow->rotateX(60.0_degf);
-    new RingDrawable{*cow, 0x0000ff_rgbf, _drawables};
 
-    Object3D *cor = new Object3D{&_scene};
-    cor->rotateX(90.0_degf);
-    cor->transform(scaling);
-    new RingDrawable{*cor, 0xff000088_rgbaf, _drawables};
-
-    Object3D *cog = new Object3D{&_scene};
-    cog->rotateX(-60.0_degf);
-    cog->transform(scaling);
-    new RingDrawable{*cog, 0x00ff0088_rgbaf, _drawables};
+    { // Known devices
+        Object3D *cob = new Object3D{&_scene};
+        Matrix4 scaling = Matrix4::scaling(Vector3{4.8});
+        cob->transform(scaling);
+        cob->rotateX(90.0_degf);
+        cob->translate(Vector3{5.0f, 0.0f, 5.0f});
+        new RingDrawable{*cob, 0x0000ff_rgbf, _drawables};
+    }
+    { // Gateways
+        Object3D *coy = new Object3D{&_scene};
+        Matrix4 scaling = Matrix4::scaling(Vector3{4.8});
+        coy->transform(scaling);
+        coy->rotateX(90.0_degf);
+        coy->translate(Vector3{5.0f, 0.0f, -5.0f});
+        new RingDrawable{*coy, 0xffff00_rgbf, _drawables};
+    }
+    { // Unknown devices
+        Object3D *cor = new Object3D{&_scene};
+        Matrix4 scaling = Matrix4::scaling(Vector3{4.8});
+        cor->rotateX(90.0_degf);
+        cor->transform(scaling);
+        cor->translate(Vector3{-5.0f, 0.0f, -5.0f});
+        new RingDrawable{*cor, 0xff0000_rgbf, _drawables};
+    }
+    { // Broadcast addrs
+        Object3D *cog = new Object3D{&_scene};
+        Matrix4 scaling = Matrix4::scaling(Vector3{4.8});
+        cog->rotateX(90.0_degf);
+        cog->transform(scaling);
+        cog->translate(Vector3{-5.0f, 0.0f, 5.0f});
+        new RingDrawable{*cog, 0x00ff00_rgbf, _drawables};
+    }
 
     Vector2 p1, p2;
     {
@@ -582,7 +601,10 @@ void ObjSelect::deselectAllDevices() {
 DeviceStats* ObjSelect::createCircle(const std::string mac) {
     Object3D* o = new Object3D{&_scene};
 
-    Vector2 v = 10.0f*randCirclePoint();
+    Vector2 v = 4.0f*randCirclePoint();
+    Vector2 z = randOffset(5.0f);
+    v = v + z;
+
     o->translate({v.x(), 0.0f, v.y()});
 
     UnsignedByte id = static_cast<UnsignedByte>(_device_objects.size()+1);
@@ -623,7 +645,15 @@ void ObjSelect::drawEvent() {
         }
     }
 
-    // TODO cleanup objects:
+    // TODO TODO TODO TODO
+    // Expire devices that haven't communicated in awhile
+    // TODO TODO TODO TODO
+    // steps
+    // 0: add shader uniform to expire device
+    // 1: refactor _device id vector to map of ids
+    // 2: create _expired member and update phongid draw
+    // 3: remove expired devices
+
     std::set<PacketLineDrawable *>::iterator it;
     for (it = _packet_line_queue.begin(); it != _packet_line_queue.end(); ) {
         PacketLineDrawable *pl = *it;
@@ -662,8 +692,6 @@ void ObjSelect::drawEvent() {
 
     _imgui.newFrame();
 
-    ImGui::ShowDemoWindow();
-
     ImGui::SetNextWindowSize(ImVec2(300, 210), ImGuiSetCond_Always);
     ImGui::Begin("Tap Status");
 
@@ -672,14 +700,19 @@ void ObjSelect::drawEvent() {
 
     const int len_v = 60;
     static float values[len_v] = { 0 };
+    static float values2[len_v] = { 0 };
     static int values_offset = 0;
     static double refresh_time = 0.0;
+    float tot = 0;
     if (refresh_time == 0.0)
         refresh_time = ImGui::GetTime();
     while (refresh_time < ImGui::GetTime()) // Create dummy data at fixed 60 hz rate for the demo
     {
-        int x = 1 + std::rand()/((RAND_MAX + 1u)/2);
-        values[values_offset] = (float)x;
+        float x = (float)(1 + std::rand()/((RAND_MAX + 1u)/2));
+        int y = 1 + std::rand()/((RAND_MAX + 1u)/2);
+        tot = tot + x;
+        values[values_offset] = x;
+        values2[values_offset] = (float)y;
         values_offset = (values_offset+1) % len_v;
         refresh_time += 4.0f/60.0f;
     }
@@ -688,10 +721,10 @@ void ObjSelect::drawEvent() {
     char c[40];
     ImGui::Text("App average %.3f ms/frame (%.1f FPS)",
         1000.0/Double(ImGui::GetIO().Framerate), Double(ImGui::GetIO().Framerate));
-    sprintf(c, "avg tx ppf %0.2f", 3.3453f);
+    sprintf(c, "avg tx ppf %0.6f", tot/len_v);
     ImGui::PlotLines("", values, len_v, values_offset, c, 0.0f, 4.0f, ImVec2(300,60));
-    sprintf(c, "avg rx ppf %0.2f", 4.34f);
-    ImGui::PlotLines("", values, len_v, values_offset, c, 0.0f, 4.0f, ImVec2(300,60));
+    sprintf(c, "avg rx ppf %0.6f", tot/len_v);
+    ImGui::PlotLines("", values2, len_v, values_offset, c, 0.0f, 4.0f, ImVec2(300,60));
     ImGui::Separator();
     ImGui::End();
 
@@ -709,11 +742,12 @@ void ObjSelect::drawEvent() {
         } else {
             ImGui::Text("%s", s.c_str());
         }
+        /*
         ImVec2 dimensions = ImVec2(300,20);
         if (ImGui::Button("xxx", dimensions)) {
             deselectAllDevices();
             d_s->_drawable->setSelected(true);
-        }
+        }*/
     }
     ImGui::EndChild();
     ImGui::End();
@@ -830,6 +864,13 @@ Vector2 randCirclePoint() {
     float f =  rand() / (RAND_MAX/(2*Math::Constants<float>::pi()));
 
     return Vector2{cos(f), sin(f)};
+}
+
+Vector2 randOffset(float z) {
+    int x = rand() % 2;
+    int y = rand() % 2;
+    Vector2 v = Vector2{x ? z : -z, y ? z : -z};
+    return v;
 }
 
 }}
