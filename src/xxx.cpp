@@ -249,11 +249,10 @@ class ParaLineShader: public GL::AbstractShaderProgram {
             return *this;
         }
 
-        /*
         ParaLineShader& setBPos(const Vector3& position) {
             setUniform(_bPosUniform, position);
             return *this;
-        }*/
+        }
 
         ParaLineShader& setTParam(const float t) {
             setUniform(_tParamUniform, t);
@@ -267,7 +266,7 @@ class ParaLineShader: public GL::AbstractShaderProgram {
 
     private:
         Int _colorUniform,
-            //_bPosUniform,
+            _bPosUniform,
             _tParamUniform,
             _transformationProjectionMatrixUniform;
 
@@ -284,7 +283,7 @@ ParaLineShader::ParaLineShader() {
     attachShaders({vert, frag});
     CORRADE_INTERNAL_ASSERT(link());
 
-    //_bPosUniform = uniformLocation("bPos");
+    _bPosUniform = uniformLocation("bPos");
     _colorUniform = uniformLocation("color");
     _tParamUniform = uniformLocation("tParam");
     _transformationProjectionMatrixUniform = uniformLocation("transformationProjectionMatrix");
@@ -298,8 +297,8 @@ class PacketLineDrawable: public SceneGraph::Drawable3D {
         explicit PacketLineDrawable(Object3D& object, ParaLineShader& shader, Vector3& a, Vector3& b, SceneGraph::DrawableGroup3D& group):
             SceneGraph::Drawable3D{object, &group},
             _object{object},
-            _shader{shader}//,
-            //_b{b}
+            _shader{shader},
+            _b{b}
         {
             _t = 1.0f;
             _mesh = MeshTools::compile(Primitives::line3D(a,b));
@@ -313,6 +312,8 @@ class PacketLineDrawable: public SceneGraph::Drawable3D {
         void draw(const Matrix4& transformationMatrix, SceneGraph::Camera3D& camera) override {
             if (_t < 1.001f && _t > 0.0f) {
                 _t -= 0.02f;
+                Matrix4 scaling = Matrix4::scaling(Vector3{_t});
+                _object.transform(scaling);
             }
             if (_t < 0.0f) {
                 _expired=true;
@@ -320,14 +321,14 @@ class PacketLineDrawable: public SceneGraph::Drawable3D {
             }
 
             _shader.setTransformationProjectionMatrix(camera.projectionMatrix()*transformationMatrix)
-                   //.setBPos(_b)
+                   .setBPos(_b)
                    .setTParam(_t);
             _mesh.draw(_shader);
         }
 
         GL::Mesh _mesh;
         ParaLineShader& _shader;
-        //Vector3 _b;
+        Vector3 _b;
         float _t;
 };
 
