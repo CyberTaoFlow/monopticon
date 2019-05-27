@@ -142,8 +142,8 @@ PhongIdShader::PhongIdShader() {
 
     GL::Shader vert{GL::Version::GL330, GL::Shader::Type::Vertex},
         frag{GL::Version::GL330, GL::Shader::Type::Fragment};
-    vert.addSource(rs.get("phongid.vs"));
-    frag.addSource(rs.get("phongid.fs"));
+    vert.addSource(rs.get("shaders/phongid.vs"));
+    frag.addSource(rs.get("shaders/phongid.fs"));
     CORRADE_INTERNAL_ASSERT(GL::Shader::compile({vert, frag}));
     attachShaders({vert, frag});
     CORRADE_INTERNAL_ASSERT(link());
@@ -277,8 +277,8 @@ ParaLineShader::ParaLineShader() {
 
     GL::Shader vert{GL::Version::GL330, GL::Shader::Type::Vertex},
         frag{GL::Version::GL330, GL::Shader::Type::Fragment};
-    vert.addSource(rs.get("packetline.vs"));
-    frag.addSource(rs.get("packetline.fs"));
+    vert.addSource(rs.get("shaders/packetline.vs"));
+    frag.addSource(rs.get("shaders/packetline.fs"));
     CORRADE_INTERNAL_ASSERT(GL::Shader::compile({vert, frag}));
     attachShaders({vert, frag});
     CORRADE_INTERNAL_ASSERT(link());
