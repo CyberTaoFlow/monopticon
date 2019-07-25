@@ -2,44 +2,6 @@
 
 using namespace Monopticon::Device;
 
-
-Selectable::~Selectable() {
-    std::cerr << "Virtual destruct called!" << std::endl;
-    exit(1);
-    deleteHighlight();
-}
-
-
-void Selectable::addHighlight(Shaders::Flat3D& shader, SceneGraph::DrawableGroup3D &group) {
-    const Color3 c = 0x00ff00_rgbf;
-    const Matrix4 scaling = Matrix4::scaling(Vector3{8.0});
-
-    Object3D *o = new Object3D{&this->getObj()};
-    o->transform(scaling);
-
-    _highlight = new Figure::UnitBoardDrawable{*o, shader, group, c};
-}
-
-
-void Selectable::deleteHighlight() {
-    if (_highlight != nullptr) {
-        delete _highlight;
-        _highlight = nullptr;
-    }
-}
-
-
-bool Selectable::isSelected() {
-    return _highlight != nullptr;
-}
-
-
-Object3D& Stats::getObj() {
-    Object3D& t = *_drawable;
-    return t;
-}
-
-
 Stats::Stats(std::string macAddr, Vector3 pos, Figure::DeviceDrawable *dev):
          mac_addr{macAddr},
          _drawable{dev},
@@ -55,10 +17,6 @@ Stats::Stats(std::string macAddr, Vector3 pos, Figure::DeviceDrawable *dev):
         health{60*30}
 {}
 
-
-Vector3 Stats::getTranslation() {
-    return circPoint;
-}
 
 
 std::string Stats::create_device_string() {
@@ -76,22 +34,13 @@ std::string Stats::create_device_string() {
 
 void Stats::renderText() {
     std::string s = create_device_string();
+    /*
     if (isSelected()) {
         ImGui::TextColored(ImVec4(1,1,0,1), "%s", s.c_str());
     } else {
         ImGui::Text("%s", s.c_str());
-    }
+    }*/
 }
-
-
-/*
-void Stats::setSelected(bool selected) {
-    _selected = selected;
-
-    if (selected) {
-        _drawable->resetTParam();
-    }
-}*/
 
 
 void Stats::updateMaps(std::string ip_src, std::string mac_dst) {

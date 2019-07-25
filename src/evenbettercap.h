@@ -83,6 +83,7 @@ namespace Monopticon {
 
   namespace Figure {
 
+    class Selectable;
     class DeviceDrawable;
     class PhongIdShader;
     class UnitBoardDrawable;
@@ -104,9 +105,7 @@ namespace Monopticon {
   }
 
   namespace Level3 {
-
     class Address;
-
   }
 
 // Definitions
@@ -145,25 +144,7 @@ namespace Util {
 
 namespace Device {
 
-class Selectable {
-  public:
-    virtual ~Selectable();
-    void addHighlight(Shaders::Flat3D& shader, SceneGraph::DrawableGroup3D &group);
-    bool isSelected();
-
-    virtual Vector3 getTranslation() {return Vector3{-3.0};}
-    virtual Object3D& getObj() {
-        // TODO remove
-        std::cerr << "Called virtual getObj" << std::endl; exit(1); return *(new Object3D{});
-    };
-
-    Figure::UnitBoardDrawable *_highlight{nullptr};
-
-    void deleteHighlight();
-};
-
-
-class Stats: public Selectable {
+class Stats {
   public:
     Stats(std::string macAddr, Vector3 pos, Figure::DeviceDrawable *dev);
     ~Stats();
@@ -172,13 +153,10 @@ class Stats: public Selectable {
     void renderText();
     void updateMaps(std::string ip_src_addr, std::string mac_dst);
 
-    Vector3 getTranslation();
-
     std::string makeIpLabel();
 
     std::string                mac_addr;
     Figure::DeviceDrawable     *_drawable;
-    Object3D& getObj();
 
     Figure::TextDrawable   *_ip_label;
     Figure::TextDrawable   *_mac_label;
@@ -252,29 +230,26 @@ class RouteMgr {
 
 }
 
-namespace Level3 {
-
-class Address: public Device::Selectable, public Object3D, public SceneGraph::Drawable3D {
-  public:
-    explicit Address(UnsignedByte id, Object3D& object, Figure::PhongIdShader& shader, Color3 &color, GL::Mesh& mesh, SceneGraph::DrawableGroup3D& drawables);
-
-    Object3D& getObj();
-    Vector3 getTranslation();
-
-    std::string value;
-
-  private:
-    void draw(const Matrix4& transformation, SceneGraph::Camera3D& camera) override;
-
-    UnsignedByte _id;
-    Color3 _color;
-    Figure::PhongIdShader& _shader;
-    GL::Mesh& _mesh;
-};
-
-}
-
 namespace Figure {
+
+class Selectable {
+
+  public:
+    // TODO understand why the linker requires a definition for virtual funcs
+    virtual ~Selectable() {
+        std::cerr << "Virtual destruct called!" << std::endl;
+        exit(1);
+    }
+
+    void addHighlight(Shaders::Flat3D& shader, SceneGraph::DrawableGroup3D &group);
+    bool isSelected();
+
+    virtual Vector3 getTranslation() {return Vector3{-3.0};}
+
+    Figure::UnitBoardDrawable *_highlight{nullptr};
+
+    void deleteHighlight();
+};
 
 class PhongIdShader: public GL::AbstractShaderProgram {
     public:
@@ -308,26 +283,33 @@ class PhongIdShader: public GL::AbstractShaderProgram {
         _projectionMatrixUniform;
 };
 
-class DeviceDrawable: public Object3D, public SceneGraph::Drawable3D {
-    public:
-        explicit DeviceDrawable(UnsignedByte id, Object3D& object, PhongIdShader& shader, Color3 &color, GL::Mesh& mesh, const Matrix4& primitiveTransformation, SceneGraph::DrawableGroup3D& drawables);
+class DeviceDrawable: public Selectable, Object3D, SceneGraph::Drawable3D {
+  public:
+    explicit DeviceDrawable(UnsignedByte id, Object3D& object, PhongIdShader& shader, Color3 &color, GL::Mesh& mesh, const Matrix4& primitiveTransformation, SceneGraph::DrawableGroup3D& drawables);
 
-        Device::Stats * _deviceStats;
-        void resetTParam();
+    Device::Stats * _deviceStats;
+    void resetTParam();
 
-    private:
-        void draw(const Matrix4& transformation, SceneGraph::Camera3D& camera) override;
+    Vector3 getTranslation();
 
-        UnsignedByte _id;
-        Color3 _color;
-        PhongIdShader& _shader;
-        GL::Mesh& _mesh;
-        Matrix4 _primitiveTransformation;
-        bool _drop;
-        float _t;
+  protected:
+    void clean(const Matrix4& absoluteTransformation) override;
+
+  private:
+    void draw(const Matrix4& transformation, SceneGraph::Camera3D& camera) override;
+
+    UnsignedByte _id;
+    Color3 _color;
+    PhongIdShader& _shader;
+    GL::Mesh& _mesh;
+    Matrix4 _primitiveTransformation;
+    bool _drop;
+    float _t;
+
+    Vector3 _absolutePosition;
 };
 
-class RingDrawable: public Object3D, public SceneGraph::Drawable3D {
+class RingDrawable: public Object3D, SceneGraph::Drawable3D {
     public:
         explicit RingDrawable(Object3D& object, const Color4& color, SceneGraph::DrawableGroup3D& group);
 
@@ -499,6 +481,31 @@ class WorldScreenLink: public SceneGraph::Drawable3D {
         Vector3 _origin;
         Vector2 _screenPos;
         GL::Mesh _mesh;
+};
+
+}
+
+namespace Level3 {
+
+class Address: public Figure::Selectable, Object3D, SceneGraph::Drawable3D  {
+  public:
+    explicit Address(UnsignedByte id, Object3D& object, Figure::PhongIdShader& shader, Color3 &color, GL::Mesh& mesh, SceneGraph::DrawableGroup3D& drawables);
+
+    Vector3 getTranslation();
+
+    std::string value;
+  protected:
+    void clean(const Matrix4& absoluteTransformation) override;
+
+  private:
+    void draw(const Matrix4& transformation, SceneGraph::Camera3D& camera) override;
+
+    UnsignedByte _id;
+    Color3 _color;
+    Figure::PhongIdShader& _shader;
+    GL::Mesh& _mesh;
+
+    Vector3 _absolutePosition;
 };
 
 }

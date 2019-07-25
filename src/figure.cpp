@@ -2,6 +2,34 @@
 
 using namespace Monopticon::Figure;
 
+void Selectable::addHighlight(Shaders::Flat3D& shader, SceneGraph::DrawableGroup3D &group) {
+    const Color3 c = 0x00ff00_rgbf;
+    // NOTE this scaling factor is relative to the parent.
+    // Different types will have with differently sized boxes if that are
+    // scaled using different factors at initialization.
+    const Matrix4 scaling = Matrix4::scaling(Vector3{8.0});
+
+    Object3D *parent = dynamic_cast<Object3D*>(this);
+    Object3D *o = new Object3D{parent};
+    o->transform(scaling);
+
+    _highlight = new Figure::UnitBoardDrawable{*o, shader, group, c};
+}
+
+
+void Selectable::deleteHighlight() {
+    if (_highlight != nullptr) {
+        delete _highlight;
+        _highlight = nullptr;
+    }
+}
+
+
+bool Selectable::isSelected() {
+    return _highlight != nullptr;
+}
+
+
 PhongIdShader::PhongIdShader() {
     Utility::Resource rs("monopticon");
 
@@ -81,7 +109,16 @@ DeviceDrawable::DeviceDrawable(UnsignedByte id, Object3D& object, PhongIdShader&
     _mesh(mesh),
     _primitiveTransformation{primitiveTransformation},
     _drop{true},
-    _t{1.0f} {}
+    _t{1.0f}
+{
+    setCachedTransformations(SceneGraph::CachedTransformation::Absolute);
+    setClean();
+}
+
+
+void DeviceDrawable::clean(const Matrix4& absoluteTransformation) {
+    _absolutePosition = absoluteTransformation.translation();
+}
 
 
 void DeviceDrawable::resetTParam() {
@@ -89,24 +126,29 @@ void DeviceDrawable::resetTParam() {
 }
 
 
+Vector3 DeviceDrawable::getTranslation() {
+    return _absolutePosition;
+}
+
+
 void DeviceDrawable::draw(const Matrix4& transformation, SceneGraph::Camera3D& camera){
-    /*if (_drop) {
+    if (_drop) {
         _t = _t - 0.01f;
         if (_t < 0.0f) _drop = false;
     } else {
         _t = _t + 0.01f;
         if (_t > 1.0f) _drop = true;
-    }*/
-
+    }
+    //bool picked = isSelected();
+    bool picked = false;
     _shader.setTransformationMatrix(transformation*_primitiveTransformation)
            .setNormalMatrix(transformation.rotationScaling())
            .setProjectionMatrix(camera.projectionMatrix())
-           .setAmbientColor(_deviceStats->_selected ? _color*0.2f : Color3{})
-           .setColor(_color*(_deviceStats->_selected ? 1.5f : 0.9f))
+           .setAmbientColor(picked ? _color*0.2 : Color3{})
+           .setColor(_color*(picked ? 1.5 : 0.9))
            .setTimeIntensity(_t)
-           /* relative to the camera */
-           .setLightPosition({0.0f, 4.0f, 3.0f})
-           .setObjectId(_id+1);
+           .setLightPosition({0.0, 4.0, 3.0})
+           .setObjectId(_id);
     _mesh.draw(_shader);
 }
 

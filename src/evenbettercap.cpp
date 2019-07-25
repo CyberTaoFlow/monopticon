@@ -27,7 +27,7 @@ const int num_rings = 8;
 const int elems_per_ring[8]{1, 4, 8, 16, 32, 64, 256, 10000};
 const float ring_radii[8]{0.0f, 4.0f, 8.0f, 12.0f, 16.0f, 24.0f, 32.0f, 64.0f};
 
-const Vector3 offset{0.0f, 1.0f, 0.0f};
+const Vector3 offset{0.0f, 3.0f, 0.0f};
 
 // Zeek broker components
 broker::endpoint _ep;
@@ -89,8 +89,8 @@ class Application: public Platform::Application {
 
         UnsignedByte newObjectId();
         void deselectObject();
-        void objectClicked(Device::Selectable *selection);
-        void highlightObject(Device::Selectable *selection);
+        void objectClicked(Figure::Selectable *selection);
+        void highlightObject(Figure::Selectable *selection);
 
         void DeleteEverything();
 
@@ -134,7 +134,7 @@ class Application: public Platform::Application {
         Shaders::DistanceFieldVector3D _text_shader;
 
         // Scene objects
-        std::vector<Device::Selectable*> _selectable_objects{};
+        std::vector<Figure::Selectable*> _selectable_objects{};
         std::set<Figure::PacketLineDrawable*> _packet_line_queue{};
 
         std::map<std::string, Device::Stats*> _device_map{};
@@ -143,7 +143,7 @@ class Application: public Platform::Application {
 
         std::vector<Device::WindowMgr*> _inspected_device_window_list{};
 
-        Device::Selectable* _selectedObject{nullptr};
+        Figure::Selectable* _selectedObject{nullptr};
         Device::Stats* _listeningDevice{nullptr};
         Device::Stats* _activeGateway{nullptr};
 
@@ -282,9 +282,6 @@ void Application::prepareGLBuffers(const Range2Di& viewport) {
 
 
 void Application::prepareDrawables() {
-    //auto *ring = Util::createLayoutRing(_scene, _permanent_drawables, 10.0f, Vector3{1.0f, 0.0f, 1.0f});
-    //ring->setMesh(Primitives::grid3DWireframe(Vector2i(10, 10)));
-
     Device::PrefixStats *ff_bcast = createBroadcastPool("ff", Vector3{1.0f, -4.0f, 1.0f});
     Device::PrefixStats *three_bcast = createBroadcastPool("33", Vector3{1.0f, -4.0f, -1.0f});
     Device::PrefixStats *one_bcast = createBroadcastPool("01", Vector3{-1.0f, -4.0f, 1.0f});
@@ -336,8 +333,6 @@ void Application::drawTextElements() {
     GL::Renderer::disable(GL::Renderer::Feature::Blending);
     GL::Renderer::setBlendFunction(GL::Renderer::BlendFunction::One, GL::Renderer::BlendFunction::Zero);
     GL::Renderer::setBlendEquation(GL::Renderer::BlendEquation::Add, GL::Renderer::BlendEquation::Add);
-
-    _camera->draw(_billboard_drawables);
 }
 
 
@@ -349,7 +344,6 @@ void Application::draw3DElements() {
 
     // Draw selectable objects to custom framebuffer
     _camera->draw(_selectable_drawables);
-
 
     /* Bind the main buffer back */
     GL::defaultFramebuffer.clear(GL::FramebufferClear::Color|GL::FramebufferClear::Depth)
@@ -392,17 +386,16 @@ void Application::drawIMGuiElements(int event_cnt) {
 
                 if (mac_addr.size() > 0) {
                     _listeningDevice = createSphere(mac_addr);
-                    //objectClicked(_listeningDevice);
+                    objectClicked(_listeningDevice->_drawable);
 
                     s = "monopt_iface_proto ipv4_addr ";
                     cmd = s.append(chosen_iface);
                     std::string ipv4_addr = Util::exec_output(cmd);
 
                     if (ipv4_addr.size() > 0) {
-                        //_listeningDevice->updateMaps(ipv4_addr, "");
+                        createIPv4Address(ipv4_addr, _listeningDevice->circPoint);
                     }
                     addDirectLabels(_listeningDevice);
-                    createIPv4Address(ipv4_addr, _listeningDevice->circPoint);
                 } else {
                     std::cerr << "Empty mac addr for net interface: " << chosen_iface << std::endl;
                 }
@@ -534,7 +527,7 @@ void Application::drawIMGuiElements(int event_cnt) {
         sprintf(b, "%d", i);
         i++;
         if (ImGui::InvisibleButton(b, ImVec2(300, 18))) {
-            objectClicked(d_s);
+            objectClicked(d_s->_drawable);
         }
         ImGui::SameLine(5.0f);
         d_s->renderText();
@@ -888,7 +881,7 @@ void Application::parse_arp_table(std::map<broker::data, broker::data> *arp_tabl
 
 
 UnsignedByte Application::newObjectId() {
-    return static_cast<UnsignedByte>(_selectable_objects.size());
+    return static_cast<UnsignedByte>(_selectable_objects.size()+1);
 }
 
 
@@ -993,23 +986,15 @@ void Application::addDirectLabels(Device::Stats *d_s) {
 }
 
 
-void Application::highlightObject(Device::Selectable *selection) {
-
+void Application::highlightObject(Figure::Selectable *selection) {
 
 }
 
 
-void Application::objectClicked(Device::Selectable *selection) {
+void Application::objectClicked(Figure::Selectable *selection) {
     deselectObject();
     _selectedObject = selection;
-
-    //Object3D *o = selection->getObj();
-
-    //Level3::Address *a = dynamic_cast<Level3::Address*>(selection);
     selection->addHighlight(_bbitem_shader, _billboard_drawables);
-
-    _selectedObject = selection;
-
 }
 
 
@@ -1059,7 +1044,7 @@ Device::Stats* Application::createSphere(const std::string mac) {
     Device::Stats* d_s = new Device::Stats{mac, w, dev};
     dev->_deviceStats = d_s;
 
-    _selectable_objects.push_back(d_s);
+    _selectable_objects.push_back(dev);
     _device_map.insert(std::make_pair(mac, d_s));
 
     return d_s;
@@ -1076,8 +1061,6 @@ Device::PrefixStats* Application::createBroadcastPool(const std::string mac_pref
 
 Level3::Address* Application::createIPv4Address(const std::string ipv4_addr, Vector3 pos) {
     auto t = pos+offset;
-
-    Utility::Debug{} << t;
 
     Object3D* g = new Object3D{&_scene};
     Object3D* o = new Object3D{g};
@@ -1257,6 +1240,8 @@ void Application::drawEvent() {
 
     drawTextElements();
 
+    _camera->draw(_billboard_drawables);
+
     drawIMGuiElements(event_cnt);
 
     frame_cnt ++;
@@ -1327,7 +1312,7 @@ void Application::mouseReleaseEvent(MouseEvent& event) {
     UnsignedByte id = data.data<UnsignedByte>()[0];
     unsigned short i = static_cast<unsigned short>(id);
     if(i > 0 && i < _selectable_objects.size()+1) {
-        Device::Selectable *selection = _selectable_objects.at(i-1);
+        Figure::Selectable *selection = _selectable_objects.at(i-1);
 
         objectClicked(selection);
 

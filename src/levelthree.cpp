@@ -11,32 +11,35 @@ Address::Address(UnsignedByte id, Object3D& object, Figure::PhongIdShader& shade
     _shader{shader},
     _mesh{mesh}
 {
+    setCachedTransformations(SceneGraph::CachedTransformation::Absolute);
+    setClean();
+}
 
+
+void Address::clean(const Matrix4& absoluteTransformation) {
+    _absolutePosition = absoluteTransformation.translation();
 }
 
 
 void Address::draw(const Matrix4& transformationMatrix, SceneGraph::Camera3D& camera) {
     auto tm = transformationMatrix;
 
+    // TODO investigate why _cubemesh normals are not producing expected specularity
     _shader.setTransformationMatrix(tm)
            .setNormalMatrix(tm.rotationScaling())
            .setProjectionMatrix(camera.projectionMatrix())
            .setAmbientColor(_color*0.2)
-           //.setTimeIntensity(1.0)
-           .setColor(_color)
+           .setTimeIntensity(0.9)
+           .setColor(_color*0.9)
            /* relative to the camera */
            .setLightPosition({0.0f, 4.0f, 3.0f})
-           .setObjectId(_id+1);
+           .setObjectId(_id);
 
     _mesh.draw(_shader);
 }
 
+
 Vector3 Address::getTranslation() {
-    // TODO use _absoluteTransformationCache
-    return Vector3{};
-}
-
-
-Object3D& Address::getObj() {
-    return *this;
+    // NOTE could call setClean here to resolve any future movement calls
+    return _absolutePosition;
 }
